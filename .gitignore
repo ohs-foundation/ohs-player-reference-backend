@@ -21,3 +21,6 @@ __pycache__/
 
 # MacOS
 .DS_Store
+
+#Project
+src/main/resources/application.properties
