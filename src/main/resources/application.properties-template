@@ -1,0 +1,4 @@
+# Set to the lowest level to see all logs and leave it to the host application to filter out what they want to see
+logging.level.dev.ohs.player=TRACE
+iam.provider.client-id=
+iam.provider.client-secret=
