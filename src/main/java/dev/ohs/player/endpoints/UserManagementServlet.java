@@ -3,6 +3,7 @@ package dev.ohs.player.endpoints;
 import ca.uhn.fhir.context.FhirContext;
 import ca.uhn.fhir.rest.server.exceptions.BaseServerResponseException;
 import dev.ohs.player.fhir.PractitionerService;
+import dev.ohs.player.iam.IamGroupRepresentation;
 import dev.ohs.player.iam.IamProviderService;
 import dev.ohs.player.iam.IamUser;
 import dev.ohs.player.iam.PasswordUpdate;
@@ -10,7 +11,11 @@ import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.hl7.fhir.r4.model.Bundle;
 import org.hl7.fhir.r4.model.Practitioner;
@@ -41,7 +46,7 @@ public class UserManagementServlet extends HttpServlet {
       logger.error("Failed to create user in IAM provider", e);
       ServletResponseUtil.writeJsonError(
           response,
-          HttpServletResponse.SC_BAD_GATEWAY,
+          ServletResponseUtil.iamErrorStatus(e),
           "Failed to create user in IAM provider: " + e.getMessage());
       return;
     }
@@ -57,6 +62,10 @@ public class UserManagementServlet extends HttpServlet {
           HttpServletResponse.SC_INTERNAL_SERVER_ERROR,
           "Failed to create Practitioner resource; IAM user creation was rolled back");
       return;
+    }
+
+    if (user.getGroupIds() != null) {
+      assignUserGroups(iamUserId, user.getGroupIds());
     }
 
     String fhirJson = fhirContext.newJsonParser().encodeResourceToString(practitioner);
@@ -138,7 +147,7 @@ public class UserManagementServlet extends HttpServlet {
       logger.error("Failed to update user in IAM provider: id={}", iamUserId, e);
       ServletResponseUtil.writeJsonError(
           response,
-          HttpServletResponse.SC_BAD_GATEWAY,
+          ServletResponseUtil.iamErrorStatus(e),
           "Failed to update user in IAM provider: " + e.getMessage());
       return;
     }
@@ -153,6 +162,10 @@ public class UserManagementServlet extends HttpServlet {
           HttpServletResponse.SC_INTERNAL_SERVER_ERROR,
           "IAM provider updated but failed to update Practitioner resource");
       return;
+    }
+
+    if (user.getGroupIds() != null) {
+      syncUserGroups(iamUserId, user.getGroupIds());
     }
 
     String fhirJson = fhirContext.newJsonParser().encodeResourceToString(updated);
@@ -355,12 +368,56 @@ public class UserManagementServlet extends HttpServlet {
       logger.error("Failed to reset password for IAM user: id={}", iamUserId, e);
       ServletResponseUtil.writeJsonError(
           response,
-          HttpServletResponse.SC_BAD_GATEWAY,
+          ServletResponseUtil.iamErrorStatus(e),
           "Failed to reset password in IAM provider: " + e.getMessage());
       return;
     }
 
     response.setStatus(HttpServletResponse.SC_NO_CONTENT);
+  }
+
+  private void assignUserGroups(String iamUserId, List<String> groupIds) {
+    for (String groupId : groupIds) {
+      try {
+        iamProviderService.addUserToGroup(iamUserId, groupId);
+      } catch (Exception e) {
+        logger.warn("Failed to assign user {} to group {}: {}", iamUserId, groupId, e.getMessage());
+      }
+    }
+  }
+
+  private void syncUserGroups(String iamUserId, List<String> desiredGroupIds) {
+    Set<String> desired = new HashSet<>(desiredGroupIds);
+    Set<String> current;
+    try {
+      List<IamGroupRepresentation> currentGroups = iamProviderService.getUserGroups(iamUserId);
+      current =
+          currentGroups.stream().map(IamGroupRepresentation::getId).collect(Collectors.toSet());
+    } catch (Exception e) {
+      logger.warn("Failed to fetch current groups for user {}: {}", iamUserId, e.getMessage());
+      return;
+    }
+
+    for (String groupId : desired) {
+      if (!current.contains(groupId)) {
+        try {
+          iamProviderService.addUserToGroup(iamUserId, groupId);
+        } catch (Exception e) {
+          logger.warn("Failed to add user {} to group {}: {}", iamUserId, groupId, e.getMessage());
+        }
+      }
+    }
+
+    for (String groupId : current) {
+      if (!desired.contains(groupId)) {
+        try {
+          iamProviderService.removeUserFromGroup(iamUserId, groupId);
+        } catch (Exception e) {
+          logger.warn(
+              "Failed to remove user {} from group {}: {}", iamUserId, groupId, e.getMessage());
+        }
+      }
+    }
   }
 
   private void rollbackIamUser(String iamUserId) {

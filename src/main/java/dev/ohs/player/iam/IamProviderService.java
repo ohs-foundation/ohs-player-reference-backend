@@ -1,5 +1,7 @@
 package dev.ohs.player.iam;
 
+import java.util.List;
+
 public interface IamProviderService {
 
   /** Creates a user in the IAM provider and returns the generated user ID. */
@@ -11,4 +13,29 @@ public interface IamProviderService {
 
   /** Resets the credential for the given IAM user. */
   void resetPassword(String iamUserId, String password, boolean temporary);
+
+  // --- Group management ---
+
+  IamGroupRepresentation createGroup(IamGroup group);
+
+  IamGroupRepresentation getGroup(String groupId);
+
+  List<IamGroupRepresentation> listGroups();
+
+  void updateGroup(String groupId, IamGroup group);
+
+  void deleteGroup(String groupId);
+
+  // --- Group membership ---
+
+  void addUserToGroup(String iamUserId, String groupId);
+
+  void removeUserFromGroup(String iamUserId, String groupId);
+
+  /** Returns the groups the given IAM user currently belongs to. */
+  List<IamGroupRepresentation> getUserGroups(String iamUserId);
+
+  // --- Role discovery ---
+
+  AvailableRolesResponse listAvailableRoles();
 }

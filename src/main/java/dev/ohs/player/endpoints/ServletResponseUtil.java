@@ -2,6 +2,7 @@ package dev.ohs.player.endpoints;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
+import dev.ohs.player.iam.IamProviderException;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.time.Instant;
@@ -106,6 +107,17 @@ public final class ServletResponseUtil {
   public static void writeJsonSuccess(HttpServletResponse response, Object jsonObject)
       throws IOException {
     writeJsonResponse(response, HttpServletResponse.SC_OK, jsonObject);
+  }
+
+  /**
+   * Returns the HTTP status code to use when reporting an IAM operation failure. Forwards the
+   * upstream status from {@link IamProviderException}; falls back to 502 for all other exceptions.
+   */
+  public static int iamErrorStatus(Exception e) {
+    if (e instanceof IamProviderException) {
+      return ((IamProviderException) e).getStatusCode();
+    }
+    return HttpServletResponse.SC_BAD_GATEWAY;
   }
 
   /**
