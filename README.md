@@ -1,5 +1,11 @@
 # OHS Player Reference Backend
 
+[![CI](https://github.com/ohs-foundation/ohs-player-reference-backend/actions/workflows/ci.yml/badge.svg)](https://github.com/ohs-foundation/ohs-player-reference-backend/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/ohs-foundation/ohs-player-reference-backend/actions/workflows/codeql.yml/badge.svg)](https://github.com/ohs-foundation/ohs-player-reference-backend/actions/workflows/codeql.yml)
+[![codecov](https://codecov.io/gh/ohs-foundation/ohs-player-reference-backend/branch/main/graph/badge.svg)](https://codecov.io/gh/ohs-foundation/ohs-player-reference-backend)
+[![License](https://img.shields.io/github/license/ohs-foundation/ohs-player-reference-backend)](LICENSE)
+[![Dependabot](https://img.shields.io/badge/dependabot-enabled-025E8C?logo=dependabot)](https://github.com/ohs-foundation/ohs-player-reference-backend/network/updates)
+
 OHS Player backend extensions for OHS Player clients (KMP and Web). Provides custom endpoints and access checker plugins loaded into the FHIR Gateway at runtime.
 
 ## Building
@@ -9,6 +15,16 @@ mvn clean package
 ```
 
 Output: `target/ohs-player-backend-extensions-1.0-SNAPSHOT.jar`
+
+## Static Analysis
+
+To run Error Prone and NullAway checks locally (the same checks that run in CI):
+
+```sh
+mvn verify -Perror-prone
+```
+
+Violations will fail the build with compiler errors indicating the rule and location.
 
 ## Deploying
 
