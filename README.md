@@ -8,6 +8,16 @@
 
 OHS Player backend extensions for OHS Player clients (KMP and Web). Provides custom endpoints and access checker plugins loaded into the FHIR Gateway at runtime.
 
+## Developer Setup
+
+**JDK 21** is required to build this project. The build tooling (Spotless / google-java-format, Error Prone) depends on internal JDK APIs that are only available in JDK 21+. The compiled output still targets Java 11 bytecode, so the JAR can be loaded into any JDK 11+ runtime.
+
+Verify your version before building:
+
+```sh
+java -version  # must be 21+
+```
+
 ## Building
 
 ```sh
