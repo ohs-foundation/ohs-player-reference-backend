@@ -19,6 +19,7 @@ import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.hl7.fhir.r4.model.Bundle;
 import org.hl7.fhir.r4.model.Practitioner;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -272,8 +273,8 @@ public class UserManagementServlet extends HttpServlet {
     }
   }
 
-  private IamUser parseRequestBody(HttpServletRequest request, HttpServletResponse response)
-      throws IOException {
+  private @Nullable IamUser parseRequestBody(
+      HttpServletRequest request, HttpServletResponse response) throws IOException {
     try {
       return ServletResponseUtil.getObjectMapper().readValue(request.getReader(), IamUser.class);
     } catch (Exception e) {
@@ -299,7 +300,7 @@ public class UserManagementServlet extends HttpServlet {
     return true;
   }
 
-  private String extractIdFromPath(String pathInfo) {
+  private @Nullable String extractIdFromPath(String pathInfo) {
     if (pathInfo == null || pathInfo.equals("/")) return null;
     String id = pathInfo.startsWith("/") ? pathInfo.substring(1) : pathInfo;
     if (id.isBlank() || id.contains("/")) return null;
