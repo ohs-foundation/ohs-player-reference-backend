@@ -1,7 +1,9 @@
 package dev.ohs.player.iam;
 
 import lombok.Data;
+import org.jspecify.annotations.NullUnmarked;
 
+@NullUnmarked
 @Data
 public class IamUser {
 

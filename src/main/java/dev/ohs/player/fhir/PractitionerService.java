@@ -12,6 +12,7 @@ import org.hl7.fhir.r4.model.HumanName;
 import org.hl7.fhir.r4.model.IdType;
 import org.hl7.fhir.r4.model.Identifier;
 import org.hl7.fhir.r4.model.Practitioner;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -77,7 +78,7 @@ public class PractitionerService {
     logger.info("Deleted Practitioner: id={}", practitionerId);
   }
 
-  public String extractIamUserId(Practitioner practitioner) {
+  public @Nullable String extractIamUserId(Practitioner practitioner) {
     return practitioner.getIdentifier().stream()
         .filter(id -> KEYCLOAK_IDENTIFIER_SYSTEM.equals(id.getSystem()))
         .map(Identifier::getValue)
