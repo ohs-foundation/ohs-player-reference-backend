@@ -2,7 +2,9 @@ package dev.ohs.player.iam;
 
 import java.util.List;
 import lombok.Data;
+import org.jspecify.annotations.NullUnmarked;
 
+@NullUnmarked
 @Data
 public class AvailableRolesResponse {
 

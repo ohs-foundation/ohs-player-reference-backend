@@ -9,6 +9,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -217,8 +218,8 @@ public class GroupManagementServlet extends HttpServlet {
     response.setStatus(HttpServletResponse.SC_NO_CONTENT);
   }
 
-  private IamGroup parseRequestBody(HttpServletRequest request, HttpServletResponse response)
-      throws IOException {
+  private @Nullable IamGroup parseRequestBody(
+      HttpServletRequest request, HttpServletResponse response) throws IOException {
     try {
       return ServletResponseUtil.getObjectMapper().readValue(request.getReader(), IamGroup.class);
     } catch (Exception e) {
@@ -240,7 +241,7 @@ public class GroupManagementServlet extends HttpServlet {
   }
 
   /** Extracts a single-segment group ID from a path like {@code /{id}}. */
-  private String extractGroupId(String pathInfo) {
+  private @Nullable String extractGroupId(String pathInfo) {
     if (pathInfo == null || pathInfo.equals("/")) return null;
     String id = pathInfo.startsWith("/") ? pathInfo.substring(1) : pathInfo;
     if (id.isBlank() || id.contains("/")) return null;
@@ -251,7 +252,7 @@ public class GroupManagementServlet extends HttpServlet {
    * Extracts {@code [groupId, userId]} from a path like {@code /{groupId}/members/{userId}}.
    * Returns null if the path does not match that pattern.
    */
-  private String[] extractMemberPath(String pathInfo) {
+  private String @Nullable [] extractMemberPath(String pathInfo) {
     if (pathInfo == null) return null;
     String[] parts = pathInfo.split("/", -1);
     if (parts.length == 4
