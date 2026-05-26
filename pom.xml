@@ -13,7 +13,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <mockito.version>5.23.0</mockito.version>
         <lombok.version>1.18.46</lombok.version>
-        <error-prone.version>2.36.0</error-prone.version>
+        <error-prone.version>2.49.0</error-prone.version>
         <nullaway.version>0.13.4</nullaway.version>
         <jacoco.version>0.8.14</jacoco.version>
         <jspecify.version>1.0.0</jspecify.version>
@@ -65,7 +65,7 @@
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
-            <version>6.0.3</version>
+            <version>6.1.0</version>
             <scope>test</scope>
         </dependency>
 
@@ -212,6 +212,7 @@
                             <compilerArgs>
                                 <arg>-XDcompilePolicy=simple</arg>
                                 <arg>-XDshould-stop.ifError=FLOW</arg>
+                                <arg>-XDaddTypeAnnotationsToSymbol=true</arg>
                                 <arg>-Xplugin:ErrorProne -XepExcludedPaths:.*/src/test/.* -Xep:NullAway:ERROR -XepOpt:NullAway:AnnotatedPackages=dev.ohs.player</arg>
                                 <arg>-J--add-exports=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED</arg>
                                 <arg>-J--add-exports=jdk.compiler/com.sun.tools.javac.file=ALL-UNNAMED</arg>
