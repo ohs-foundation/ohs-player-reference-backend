@@ -31,7 +31,7 @@ Output: `target/ohs-player-backend-extensions-1.0-SNAPSHOT.jar`
 To run Error Prone and NullAway checks locally (the same checks that run in CI):
 
 ```sh
-mvn verify -Perror-prone
+mvn clean verify -Perror-prone
 ```
 
 Violations will fail the build with compiler errors indicating the rule and location.
