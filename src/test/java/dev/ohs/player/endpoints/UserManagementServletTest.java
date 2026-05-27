@@ -9,6 +9,7 @@ import ca.uhn.fhir.context.FhirContext;
 import ca.uhn.fhir.parser.IParser;
 import ca.uhn.fhir.rest.server.exceptions.ResourceNotFoundException;
 import dev.ohs.player.fhir.PractitionerService;
+import dev.ohs.player.iam.IamGroupRepresentation;
 import dev.ohs.player.iam.IamProviderService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -18,6 +19,7 @@ import java.io.StringReader;
 import java.io.StringWriter;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import org.hl7.fhir.r4.model.Bundle;
 import org.hl7.fhir.r4.model.Practitioner;
@@ -452,10 +454,268 @@ class UserManagementServletTest {
   }
 
   // -------------------------------------------------------------------------
+  // assignUserGroups — exercised via doPost
+  // -------------------------------------------------------------------------
+
+  @Test
+  void doPost_WithNullGroupIds_SkipsGroupAssignment() throws Exception {
+    givenRequestBody(VALID_USER_JSON);
+    when(iamProviderService.createUser(any())).thenReturn(IAM_USER_ID);
+    when(practitionerService.createPractitioner(eq(IAM_USER_ID), any()))
+        .thenReturn(new Practitioner());
+
+    servlet.doPost(request, response);
+
+    verify(iamProviderService, never()).addUserToGroup(any(), any());
+  }
+
+  @Test
+  void doPost_WithEmptyGroupIds_SkipsGroupAssignment() throws Exception {
+    givenRequestBody("{\"username\":\"jdoe\",\"email\":\"jdoe@example.com\",\"groupIds\":[]}");
+    when(iamProviderService.createUser(any())).thenReturn(IAM_USER_ID);
+    when(practitionerService.createPractitioner(eq(IAM_USER_ID), any()))
+        .thenReturn(new Practitioner());
+
+    servlet.doPost(request, response);
+
+    verify(iamProviderService, never()).addUserToGroup(any(), any());
+    verify(response).setStatus(HttpServletResponse.SC_CREATED);
+  }
+
+  @Test
+  void doPost_WithSingleGroupId_CallsAddUserToGroupOnce() throws Exception {
+    givenRequestBody(
+        "{\"username\":\"jdoe\",\"email\":\"jdoe@example.com\",\"groupIds\":[\"group-a\"]}");
+    when(iamProviderService.createUser(any())).thenReturn(IAM_USER_ID);
+    when(practitionerService.createPractitioner(eq(IAM_USER_ID), any()))
+        .thenReturn(new Practitioner());
+
+    servlet.doPost(request, response);
+
+    verify(iamProviderService).addUserToGroup(IAM_USER_ID, "group-a");
+    verify(response).setStatus(HttpServletResponse.SC_CREATED);
+  }
+
+  @Test
+  void doPost_WithMultipleGroupIds_CallsAddUserToGroupForEach() throws Exception {
+    givenRequestBody(
+        "{\"username\":\"jdoe\",\"email\":\"jdoe@example.com\",\"groupIds\":[\"group-a\",\"group-b\",\"group-c\"]}");
+    when(iamProviderService.createUser(any())).thenReturn(IAM_USER_ID);
+    when(practitionerService.createPractitioner(eq(IAM_USER_ID), any()))
+        .thenReturn(new Practitioner());
+
+    servlet.doPost(request, response);
+
+    verify(iamProviderService).addUserToGroup(IAM_USER_ID, "group-a");
+    verify(iamProviderService).addUserToGroup(IAM_USER_ID, "group-b");
+    verify(iamProviderService).addUserToGroup(IAM_USER_ID, "group-c");
+    verify(response).setStatus(HttpServletResponse.SC_CREATED);
+  }
+
+  @Test
+  void doPost_WithGroupIds_OneAddThrows_SwallowsAndContinues() throws Exception {
+    givenRequestBody(
+        "{\"username\":\"jdoe\",\"email\":\"jdoe@example.com\",\"groupIds\":[\"group-a\",\"group-b\"]}");
+    when(iamProviderService.createUser(any())).thenReturn(IAM_USER_ID);
+    when(practitionerService.createPractitioner(eq(IAM_USER_ID), any()))
+        .thenReturn(new Practitioner());
+    doThrow(new RuntimeException("IAM error"))
+        .when(iamProviderService)
+        .addUserToGroup(IAM_USER_ID, "group-a");
+
+    servlet.doPost(request, response);
+
+    verify(iamProviderService).addUserToGroup(IAM_USER_ID, "group-a");
+    verify(iamProviderService).addUserToGroup(IAM_USER_ID, "group-b");
+    verify(response).setStatus(HttpServletResponse.SC_CREATED);
+  }
+
+  @Test
+  void doPost_WithGroupIds_AllAddsFail_SwallowsAllExceptions() throws Exception {
+    givenRequestBody(
+        "{\"username\":\"jdoe\",\"email\":\"jdoe@example.com\",\"groupIds\":[\"group-a\",\"group-b\"]}");
+    when(iamProviderService.createUser(any())).thenReturn(IAM_USER_ID);
+    when(practitionerService.createPractitioner(eq(IAM_USER_ID), any()))
+        .thenReturn(new Practitioner());
+    doThrow(new RuntimeException("IAM error"))
+        .when(iamProviderService)
+        .addUserToGroup(any(), any());
+
+    servlet.doPost(request, response);
+
+    verify(response).setStatus(HttpServletResponse.SC_CREATED);
+  }
+
+  // -------------------------------------------------------------------------
+  // syncUserGroups — exercised via doPut
+  // -------------------------------------------------------------------------
+
+  @Test
+  void doPut_WithNullGroupIds_SkipsGroupSync() throws Exception {
+    when(request.getPathInfo()).thenReturn("/" + PRACTITIONER_ID);
+    givenRequestBody(VALID_USER_JSON);
+    Practitioner existing = new Practitioner();
+    when(practitionerService.getPractitioner(PRACTITIONER_ID)).thenReturn(existing);
+    when(practitionerService.extractIamUserId(existing)).thenReturn(IAM_USER_ID);
+    when(practitionerService.updatePractitioner(eq(PRACTITIONER_ID), eq(IAM_USER_ID), any()))
+        .thenReturn(new Practitioner());
+
+    servlet.doPut(request, response);
+
+    verify(iamProviderService, never()).getUserGroups(any());
+    verify(iamProviderService, never()).addUserToGroup(any(), any());
+    verify(iamProviderService, never()).removeUserFromGroup(any(), any());
+  }
+
+  @Test
+  void doPut_WithGroupIds_GetUserGroupsThrows_SkipsGroupSync() throws Exception {
+    givenPutWithGroups(
+        "{\"username\":\"jdoe\",\"email\":\"jdoe@example.com\",\"groupIds\":[\"group-a\"]}");
+    when(iamProviderService.getUserGroups(IAM_USER_ID))
+        .thenThrow(new RuntimeException("IAM unavailable"));
+
+    servlet.doPut(request, response);
+
+    verify(iamProviderService, never()).addUserToGroup(any(), any());
+    verify(iamProviderService, never()).removeUserFromGroup(any(), any());
+    verify(response).setStatus(HttpServletResponse.SC_OK);
+  }
+
+  @Test
+  void doPut_WithGroupIds_AllAlreadyPresent_NoAddOrRemove() throws Exception {
+    givenPutWithGroups(
+        "{\"username\":\"jdoe\",\"email\":\"jdoe@example.com\",\"groupIds\":[\"group-a\",\"group-b\"]}");
+    when(iamProviderService.getUserGroups(IAM_USER_ID))
+        .thenReturn(List.of(groupRep("group-a"), groupRep("group-b")));
+
+    servlet.doPut(request, response);
+
+    verify(iamProviderService, never()).addUserToGroup(any(), any());
+    verify(iamProviderService, never()).removeUserFromGroup(any(), any());
+  }
+
+  @Test
+  void doPut_WithGroupIds_CurrentEmpty_AddsAllDesiredGroups() throws Exception {
+    givenPutWithGroups(
+        "{\"username\":\"jdoe\",\"email\":\"jdoe@example.com\",\"groupIds\":[\"group-a\",\"group-b\"]}");
+    when(iamProviderService.getUserGroups(IAM_USER_ID)).thenReturn(List.of());
+
+    servlet.doPut(request, response);
+
+    verify(iamProviderService).addUserToGroup(IAM_USER_ID, "group-a");
+    verify(iamProviderService).addUserToGroup(IAM_USER_ID, "group-b");
+    verify(iamProviderService, never()).removeUserFromGroup(any(), any());
+  }
+
+  @Test
+  void doPut_WithEmptyGroupIds_RemovesAllCurrentGroups() throws Exception {
+    givenPutWithGroups("{\"username\":\"jdoe\",\"email\":\"jdoe@example.com\",\"groupIds\":[]}");
+    when(iamProviderService.getUserGroups(IAM_USER_ID))
+        .thenReturn(List.of(groupRep("group-a"), groupRep("group-b")));
+
+    servlet.doPut(request, response);
+
+    verify(iamProviderService).removeUserFromGroup(IAM_USER_ID, "group-a");
+    verify(iamProviderService).removeUserFromGroup(IAM_USER_ID, "group-b");
+    verify(iamProviderService, never()).addUserToGroup(any(), any());
+  }
+
+  @Test
+  void doPut_WithGroupIds_OnlyAddsGroupsNotAlreadyPresent() throws Exception {
+    givenPutWithGroups(
+        "{\"username\":\"jdoe\",\"email\":\"jdoe@example.com\",\"groupIds\":[\"group-a\",\"group-b\"]}");
+    when(iamProviderService.getUserGroups(IAM_USER_ID)).thenReturn(List.of(groupRep("group-a")));
+
+    servlet.doPut(request, response);
+
+    verify(iamProviderService).addUserToGroup(IAM_USER_ID, "group-b");
+    verify(iamProviderService, never()).addUserToGroup(IAM_USER_ID, "group-a");
+    verify(iamProviderService, never()).removeUserFromGroup(any(), any());
+  }
+
+  @Test
+  void doPut_WithGroupIds_OnlyRemovesGroupsNoLongerDesired() throws Exception {
+    givenPutWithGroups(
+        "{\"username\":\"jdoe\",\"email\":\"jdoe@example.com\",\"groupIds\":[\"group-a\"]}");
+    when(iamProviderService.getUserGroups(IAM_USER_ID))
+        .thenReturn(List.of(groupRep("group-a"), groupRep("group-b")));
+
+    servlet.doPut(request, response);
+
+    verify(iamProviderService).removeUserFromGroup(IAM_USER_ID, "group-b");
+    verify(iamProviderService, never()).removeUserFromGroup(IAM_USER_ID, "group-a");
+    verify(iamProviderService, never()).addUserToGroup(any(), any());
+  }
+
+  @Test
+  void doPut_WithGroupIds_MixedAddAndRemove() throws Exception {
+    givenPutWithGroups(
+        "{\"username\":\"jdoe\",\"email\":\"jdoe@example.com\",\"groupIds\":[\"group-b\",\"group-c\"]}");
+    when(iamProviderService.getUserGroups(IAM_USER_ID))
+        .thenReturn(List.of(groupRep("group-a"), groupRep("group-b")));
+
+    servlet.doPut(request, response);
+
+    verify(iamProviderService).addUserToGroup(IAM_USER_ID, "group-c");
+    verify(iamProviderService).removeUserFromGroup(IAM_USER_ID, "group-a");
+    verify(iamProviderService, never()).addUserToGroup(IAM_USER_ID, "group-b");
+    verify(iamProviderService, never()).removeUserFromGroup(IAM_USER_ID, "group-b");
+  }
+
+  @Test
+  void doPut_WithGroupIds_AddThrowsForOneGroup_SwallowsAndContinues() throws Exception {
+    givenPutWithGroups(
+        "{\"username\":\"jdoe\",\"email\":\"jdoe@example.com\",\"groupIds\":[\"group-a\",\"group-b\"]}");
+    when(iamProviderService.getUserGroups(IAM_USER_ID)).thenReturn(List.of());
+    doThrow(new RuntimeException("IAM error"))
+        .when(iamProviderService)
+        .addUserToGroup(IAM_USER_ID, "group-a");
+
+    servlet.doPut(request, response);
+
+    verify(iamProviderService).addUserToGroup(IAM_USER_ID, "group-a");
+    verify(iamProviderService).addUserToGroup(IAM_USER_ID, "group-b");
+    verify(response).setStatus(HttpServletResponse.SC_OK);
+  }
+
+  @Test
+  void doPut_WithGroupIds_RemoveThrowsForOneGroup_SwallowsAndContinues() throws Exception {
+    givenPutWithGroups(
+        "{\"username\":\"jdoe\",\"email\":\"jdoe@example.com\",\"groupIds\":[\"group-a\"]}");
+    when(iamProviderService.getUserGroups(IAM_USER_ID))
+        .thenReturn(List.of(groupRep("group-b"), groupRep("group-c")));
+    doThrow(new RuntimeException("IAM error"))
+        .when(iamProviderService)
+        .removeUserFromGroup(IAM_USER_ID, "group-b");
+
+    servlet.doPut(request, response);
+
+    verify(iamProviderService).removeUserFromGroup(IAM_USER_ID, "group-b");
+    verify(iamProviderService).removeUserFromGroup(IAM_USER_ID, "group-c");
+    verify(response).setStatus(HttpServletResponse.SC_OK);
+  }
+
+  // -------------------------------------------------------------------------
   // Helper
   // -------------------------------------------------------------------------
 
   private void givenRequestBody(String json) throws Exception {
     when(request.getReader()).thenReturn(new BufferedReader(new StringReader(json)));
+  }
+
+  private void givenPutWithGroups(String json) throws Exception {
+    when(request.getPathInfo()).thenReturn("/" + PRACTITIONER_ID);
+    givenRequestBody(json);
+    Practitioner existing = new Practitioner();
+    when(practitionerService.getPractitioner(PRACTITIONER_ID)).thenReturn(existing);
+    when(practitionerService.extractIamUserId(existing)).thenReturn(IAM_USER_ID);
+    when(practitionerService.updatePractitioner(eq(PRACTITIONER_ID), eq(IAM_USER_ID), any()))
+        .thenReturn(new Practitioner());
+  }
+
+  private IamGroupRepresentation groupRep(String id) {
+    IamGroupRepresentation rep = new IamGroupRepresentation();
+    rep.setId(id);
+    return rep;
   }
 }

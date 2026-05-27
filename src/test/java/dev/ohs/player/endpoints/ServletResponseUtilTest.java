@@ -3,6 +3,7 @@ package dev.ohs.player.endpoints;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
+import dev.ohs.player.iam.IamProviderException;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.PrintWriter;
 import java.io.StringWriter;
@@ -147,6 +148,29 @@ class ServletResponseUtilTest {
   @Test
   void testGetObjectMapper_IsSingleton() {
     assertSame(ServletResponseUtil.getObjectMapper(), ServletResponseUtil.getObjectMapper());
+  }
+
+  // -------------------------------------------------------------------------
+  // iamErrorStatus
+  // -------------------------------------------------------------------------
+
+  @Test
+  void iamErrorStatus_IamProviderException_ReturnsItsStatusCode() {
+    assertEquals(
+        409, ServletResponseUtil.iamErrorStatus(new IamProviderException(409, "Conflict")));
+  }
+
+  @Test
+  void iamErrorStatus_IamProviderException_PreservesAnyUpstreamStatus() {
+    assertEquals(
+        404, ServletResponseUtil.iamErrorStatus(new IamProviderException(404, "Not found")));
+    assertEquals(
+        422, ServletResponseUtil.iamErrorStatus(new IamProviderException(422, "Unprocessable")));
+  }
+
+  @Test
+  void iamErrorStatus_GenericException_Returns502() {
+    assertEquals(502, ServletResponseUtil.iamErrorStatus(new RuntimeException("boom")));
   }
 
   // Helper class for testing complex object serialization
