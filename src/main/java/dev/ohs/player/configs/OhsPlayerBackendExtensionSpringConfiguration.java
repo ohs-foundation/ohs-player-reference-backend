@@ -2,8 +2,10 @@ package dev.ohs.player.configs;
 
 import ca.uhn.fhir.context.FhirContext;
 import dev.ohs.player.endpoints.GroupManagementServlet;
+import dev.ohs.player.endpoints.PractitionerDetailsServlet;
 import dev.ohs.player.endpoints.RolesServlet;
 import dev.ohs.player.endpoints.UserManagementServlet;
+import dev.ohs.player.fhir.PractitionerDetailService;
 import dev.ohs.player.fhir.PractitionerService;
 import dev.ohs.player.iam.IamProviderService;
 import jakarta.annotation.PostConstruct;
@@ -30,6 +32,8 @@ public class OhsPlayerBackendExtensionSpringConfiguration {
 
   @Autowired PractitionerService practitionerService;
 
+  @Autowired PractitionerDetailService practitionerDetailService;
+
   @Bean
   public ServletRegistrationBean<UserManagementServlet> userManagementServlet() {
     return new ServletRegistrationBean<>(
@@ -46,6 +50,13 @@ public class OhsPlayerBackendExtensionSpringConfiguration {
   @Bean
   public ServletRegistrationBean<RolesServlet> rolesServlet() {
     return new ServletRegistrationBean<>(new RolesServlet(iamProviderService), "/api/roles/*");
+  }
+
+  @Bean
+  public ServletRegistrationBean<PractitionerDetailsServlet> practitionerDetailsServlet() {
+    return new ServletRegistrationBean<>(
+        new PractitionerDetailsServlet(practitionerDetailService, fhirContext),
+        "/api/practitioner-details");
   }
 
   @PostConstruct

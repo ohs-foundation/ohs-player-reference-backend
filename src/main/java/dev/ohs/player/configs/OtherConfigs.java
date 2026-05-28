@@ -1,6 +1,7 @@
 package dev.ohs.player.configs;
 
 import ca.uhn.fhir.context.FhirContext;
+import dev.ohs.player.fhir.PractitionerDetailService;
 import dev.ohs.player.fhir.PractitionerService;
 import dev.ohs.player.iam.IamProviderService;
 import dev.ohs.player.iam.keycloak.KeycloakIamProvider;
@@ -80,5 +81,14 @@ public class OtherConfigs {
       throw new IllegalStateException("PROXY_TO environment variable is not set");
     }
     return new PractitionerService(fhirContext(), fhirServerUrl);
+  }
+
+  @Bean
+  public PractitionerDetailService practitionerDetailService() {
+    String fhirServerUrl = System.getenv(PROXY_TO_ENV);
+    if (fhirServerUrl == null || fhirServerUrl.isBlank()) {
+      throw new IllegalStateException("PROXY_TO environment variable is not set");
+    }
+    return new PractitionerDetailService(fhirContext(), fhirServerUrl);
   }
 }
