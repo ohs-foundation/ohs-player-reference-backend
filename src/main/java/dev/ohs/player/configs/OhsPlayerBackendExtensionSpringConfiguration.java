@@ -1,6 +1,8 @@
 package dev.ohs.player.configs;
 
 import ca.uhn.fhir.context.FhirContext;
+import dev.ohs.player.endpoints.GroupManagementServlet;
+import dev.ohs.player.endpoints.RolesServlet;
 import dev.ohs.player.endpoints.UserManagementServlet;
 import dev.ohs.player.fhir.PractitionerService;
 import dev.ohs.player.iam.IamProviderService;
@@ -33,6 +35,17 @@ public class OhsPlayerBackendExtensionSpringConfiguration {
     return new ServletRegistrationBean<>(
         new UserManagementServlet(iamProviderService, practitionerService, fhirContext),
         "/api/users/*");
+  }
+
+  @Bean
+  public ServletRegistrationBean<GroupManagementServlet> groupManagementServlet() {
+    return new ServletRegistrationBean<>(
+        new GroupManagementServlet(iamProviderService), "/api/groups/*");
+  }
+
+  @Bean
+  public ServletRegistrationBean<RolesServlet> rolesServlet() {
+    return new ServletRegistrationBean<>(new RolesServlet(iamProviderService), "/api/roles/*");
   }
 
   @PostConstruct

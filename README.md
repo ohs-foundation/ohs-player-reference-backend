@@ -88,11 +88,14 @@ An unknown value causes the application to fail at startup with a clear error me
   "firstName": "Charity",
   "lastName": "Otala",
   "email": "charity@ohs.dev",
-  "enabled": true
+  "enabled": true,
+  "groupIds": ["group-uuid-1", "group-uuid-2"]
 }
 ```
 
 `username` and `email` are required. `enabled` defaults to `false` if omitted.
+
+`groupIds` is optional. When present, group membership is set to exactly the listed IDs: missing memberships are added and extra ones removed. An empty array (`[]`) removes the user from all groups. Omitting the field leaves memberships unchanged. Group assignment failures are logged as warnings and do not fail the overall request.
 
 **Request body** (PUT `/api/users/{id}/password`):
 
@@ -104,6 +107,57 @@ An unknown value causes the application to fail at startup with a clear error me
 ```
 
 `password` is required. `temporary` is optional and defaults to `false`. When `true`, Keycloak marks the credential as temporary and the user must change it on next login. Returns `204 No Content` on success.
+
+## Group Management API
+
+| Method | Endpoint | Description |
+| --- | --- | --- |
+| `GET` | `/api/groups` | List all groups (id, name, path) |
+| `POST` | `/api/groups` | Create a group |
+| `GET` | `/api/groups/{id}` | Get a group by ID (includes role assignments) |
+| `PUT` | `/api/groups/{id}` | Update a group (replaces name and role assignments) |
+| `DELETE` | `/api/groups/{id}` | Delete a group |
+| `POST` | `/api/groups/{groupId}/members/{userId}` | Add a user to a group |
+| `DELETE` | `/api/groups/{groupId}/members/{userId}` | Remove a user from a group |
+
+**Request body** (POST / PUT `/api/groups` and `/api/groups/{id}`):
+
+```json
+{
+  "name": "clinicians",
+  "realmRoles": ["GET_PATIENT"],
+  "clientRoles": {
+    "my-client": ["web.manage-locations", "web.manage-orgs"]
+  }
+}
+```
+
+`name` is required. `realmRoles` and `clientRoles` are optional. On PUT, role assignments are fully replaced by whatever is supplied.
+
+## Roles API
+
+| Method | Endpoint | Description |
+| --- | --- | --- |
+| `GET` | `/api/roles` | List all realm roles and client roles available for assignment |
+
+**Response:**
+
+```json
+{
+  "realmRoles": [
+    { "id": "...", "name": "offline_access", "description": "..." }
+  ],
+  "clients": [
+    {
+      "clientId": "my-client",
+      "clientName": "My Client",
+      "roles": [
+        { "id": "...", "name": "view-records", "description": "..." }
+      ]
+    }
+  ]
+}
+```
 
 ## Keycloak Setup
 
@@ -117,7 +171,9 @@ The admin client requires a service account with user management permissions.
 
 | Role | Purpose |
 | --- | --- |
-| `manage-users` | Create, update, delete users |
+| `manage-users` | Create, update, delete users; add/remove group members |
 | `view-users` | Read users |
+| `manage-realm` | Create, update, delete groups; assign roles to groups |
+| `view-realm` | List realm roles and clients for role discovery |
 
-Without these roles, user management requests will return `403 Forbidden`.
+Without the relevant roles, requests will return `403 Forbidden`.
