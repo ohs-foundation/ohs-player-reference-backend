@@ -159,6 +159,37 @@ An unknown value causes the application to fail at startup with a clear error me
 }
 ```
 
+## Practitioner Details API
+
+| Method | Endpoint | Description |
+| --- | --- | --- |
+| `GET` | `/api/practitioner-details?iam-id=<id>` | Fetch full practitioner context by Keycloak ID |
+| `GET` | `/api/practitioner-details?practitioner-id=<id>` | Fetch full practitioner context by FHIR Practitioner ID |
+
+**Optional query parameters:** `organisation-id`, `location-id` — filter results to PractitionerRoles that reference the given organisation or location.
+
+**Response:**
+
+```json
+{
+  "practitioner": {},
+  "practitionerRoles": [
+    {
+      "practitionerRole": {},
+      "organization": {},
+      "locations": [],
+      "careTeams": []
+    }
+  ]
+}
+```
+
+Each field is a FHIR R4 resource serialised as JSON. `organization` is `null` when the PractitionerRole has no affiliated organisation. `careTeams` contains only CareTeam resources whose `participant.member` references that specific PractitionerRole.
+
+When `iam-id` is supplied the endpoint first resolves the FHIR Practitioner ID (`Step 1`), then fetches the full context in a single FHIR call using `_include` and `_revinclude` (`Step 2`). When `practitioner-id` is supplied Step 1 is skipped.
+
+Returns `404` when no matching practitioner or roles are found, and `400` when neither `iam-id` nor `practitioner-id` is provided.
+
 ## Keycloak Setup
 
 A set up of a Keycloak OAuth2 client with client credentials grant type is required to manage users. 
