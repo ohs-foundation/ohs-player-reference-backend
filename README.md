@@ -89,11 +89,26 @@ An unknown value causes the application to fail at startup with a clear error me
   "lastName": "Otala",
   "email": "charity@ohs.dev",
   "enabled": true,
+  "dob": "1990-05-15",
+  "gender": "female",
+  "national_id": "NID-12345678",
+  "phone": "+254700000000",
   "groupIds": ["group-uuid-1", "group-uuid-2"]
 }
 ```
 
 `username` and `email` are required. `enabled` defaults to `false` if omitted.
+
+`dob`, `gender`, `national_id`, and `phone` are optional. When provided they are written to the FHIR Practitioner resource:
+
+| Field | FHIR mapping |
+| --- | --- |
+| `dob` | `Practitioner.birthDate` (format: `YYYY-MM-DD`) |
+| `gender` | `Practitioner.gender` — accepted values: `male`, `female`, `other`, `unknown` |
+| `national_id` | `Practitioner.identifier` with system `http://ohs.dev/identifiers/national-id` |
+| `phone` | `Practitioner.telecom` with `system=phone`, `use=mobile` |
+
+The `email` field is always synced to `Practitioner.telecom` with `system=email`, `use=work`.
 
 `groupIds` is optional. When present, group membership is set to exactly the listed IDs: missing memberships are added and extra ones removed. An empty array (`[]`) removes the user from all groups. Omitting the field leaves memberships unchanged. Group assignment failures are logged as warnings and do not fail the overall request.
 

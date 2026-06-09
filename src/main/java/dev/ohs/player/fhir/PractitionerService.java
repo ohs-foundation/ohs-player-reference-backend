@@ -8,6 +8,9 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import org.hl7.fhir.r4.model.Bundle;
+import org.hl7.fhir.r4.model.ContactPoint;
+import org.hl7.fhir.r4.model.DateType;
+import org.hl7.fhir.r4.model.Enumerations;
 import org.hl7.fhir.r4.model.HumanName;
 import org.hl7.fhir.r4.model.IdType;
 import org.hl7.fhir.r4.model.Identifier;
@@ -20,6 +23,7 @@ public class PractitionerService {
 
   private static final Logger logger = LoggerFactory.getLogger(PractitionerService.class);
   static final String KEYCLOAK_IDENTIFIER_SYSTEM = "http://ohs.dev/identifiers/keycloak-user-id";
+  static final String NATIONAL_ID_IDENTIFIER_SYSTEM = "http://ohs.dev/identifiers/national-id";
 
   private final FhirContext fhirContext;
   private final String fhirServerUrl;
@@ -105,19 +109,48 @@ public class PractitionerService {
     return url.toString();
   }
 
-  private Practitioner buildPractitioner(String iamUserId, IamUser user) {
+  Practitioner buildPractitioner(String iamUserId, IamUser user) {
     Practitioner practitioner = new Practitioner();
     practitioner.setActive(user.isEnabled());
 
-    Identifier identifier = new Identifier();
-    identifier.setSystem(KEYCLOAK_IDENTIFIER_SYSTEM);
-    identifier.setValue(iamUserId);
-    practitioner.addIdentifier(identifier);
+    Identifier keycloakIdentifier = new Identifier();
+    keycloakIdentifier.setSystem(KEYCLOAK_IDENTIFIER_SYSTEM);
+    keycloakIdentifier.setValue(iamUserId);
+    practitioner.addIdentifier(keycloakIdentifier);
+
+    if (user.getNationalId() != null && !user.getNationalId().isBlank()) {
+      Identifier nationalIdIdentifier = new Identifier();
+      nationalIdIdentifier.setSystem(NATIONAL_ID_IDENTIFIER_SYSTEM);
+      nationalIdIdentifier.setValue(user.getNationalId());
+      practitioner.addIdentifier(nationalIdIdentifier);
+    }
 
     HumanName name = new HumanName();
     name.setFamily(user.getLastName());
     name.addGiven(user.getFirstName());
     practitioner.addName(name);
+
+    ContactPoint emailContact = new ContactPoint();
+    emailContact.setSystem(ContactPoint.ContactPointSystem.EMAIL);
+    emailContact.setUse(ContactPoint.ContactPointUse.WORK);
+    emailContact.setValue(user.getEmail());
+    practitioner.addTelecom(emailContact);
+
+    if (user.getPhone() != null && !user.getPhone().isBlank()) {
+      ContactPoint phoneContact = new ContactPoint();
+      phoneContact.setSystem(ContactPoint.ContactPointSystem.PHONE);
+      phoneContact.setUse(ContactPoint.ContactPointUse.MOBILE);
+      phoneContact.setValue(user.getPhone());
+      practitioner.addTelecom(phoneContact);
+    }
+
+    if (user.getDob() != null && !user.getDob().isBlank()) {
+      practitioner.setBirthDateElement(new DateType(user.getDob()));
+    }
+
+    if (user.getGender() != null && !user.getGender().isBlank()) {
+      practitioner.setGender(Enumerations.AdministrativeGender.fromCode(user.getGender()));
+    }
 
     return practitioner;
   }
