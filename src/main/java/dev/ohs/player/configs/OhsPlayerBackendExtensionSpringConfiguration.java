@@ -1,6 +1,9 @@
 package dev.ohs.player.configs;
 
 import ca.uhn.fhir.context.FhirContext;
+import dev.ohs.player.bulk.BulkUserImportServlet;
+import dev.ohs.player.bulk.CsvProcessor;
+import dev.ohs.player.bulk.SseResponseHelper;
 import dev.ohs.player.endpoints.GroupManagementServlet;
 import dev.ohs.player.endpoints.PractitionerDetailsServlet;
 import dev.ohs.player.endpoints.RolesServlet;
@@ -9,6 +12,7 @@ import dev.ohs.player.fhir.PractitionerDetailService;
 import dev.ohs.player.fhir.PractitionerService;
 import dev.ohs.player.iam.IamProviderService;
 import jakarta.annotation.PostConstruct;
+import jakarta.servlet.MultipartConfigElement;
 import org.slf4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.web.servlet.ServletRegistrationBean;
@@ -57,6 +61,27 @@ public class OhsPlayerBackendExtensionSpringConfiguration {
     return new ServletRegistrationBean<>(
         new PractitionerDetailsServlet(practitionerDetailService, fhirContext),
         "/api/practitioner-details");
+  }
+
+  @Bean
+  public CsvProcessor csvProcessor() {
+    return new CsvProcessor();
+  }
+
+  @Bean
+  public SseResponseHelper sseResponseHelper() {
+    return new SseResponseHelper();
+  }
+
+  @Bean
+  public ServletRegistrationBean<BulkUserImportServlet> bulkUserImportServlet() {
+    ServletRegistrationBean<BulkUserImportServlet> bean =
+        new ServletRegistrationBean<>(
+            new BulkUserImportServlet(
+                iamProviderService, practitionerService, csvProcessor(), sseResponseHelper()),
+            "/api/bulk-import/users");
+    bean.setMultipartConfig(new MultipartConfigElement("/tmp", 52428800, 52428800, 0));
+    return bean;
   }
 
   @PostConstruct
