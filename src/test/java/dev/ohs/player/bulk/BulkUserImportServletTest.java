@@ -265,6 +265,22 @@ class BulkUserImportServletTest {
   }
 
   @Test
+  void doPost_unexpectedException_emitsGenericErrorMessage() throws Exception {
+    givenCsv(HEADER + "\n,jdoe,John,Doe,jdoe@example.com,,,,,,,,");
+    when(iamProviderService.listGroups()).thenReturn(List.of());
+    when(iamProviderService.createUser(any()))
+        .thenThrow(new RuntimeException("SELECT * FROM users WHERE name='jdoe'"));
+
+    servlet.doPost(request, response);
+
+    String output = responseBuffer.toString();
+    assertSseContains("\"error\"");
+    assertTrue(output.contains("unexpected error"), "Expected generic message but got: " + output);
+    assertTrue(
+        !output.contains("SELECT"), "Internal exception detail must not be exposed to the client");
+  }
+
+  @Test
   void doPost_firstRowFails_secondRowNotProcessed() throws Exception {
     givenCsv(
         HEADER

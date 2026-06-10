@@ -90,9 +90,14 @@ public class BulkUserImportServlet extends HttpServlet {
           processRow(line.split(",", -1), headerIndex, groupNameToId);
           processed++;
           sseHelper.emitProgress(writer, processed, total);
+        } catch (BulkImportRowException e) {
+          logger.error("Bulk import failed at row {}", rowNumber, e);
+          sseHelper.emitError(writer, e.getClientMessage(), rowNumber);
+          return;
         } catch (Exception e) {
           logger.error("Bulk import failed at row {}", rowNumber, e);
-          sseHelper.emitError(writer, e.getMessage() != null ? e.getMessage() : "", rowNumber);
+          sseHelper.emitError(
+              writer, "An unexpected error occurred processing this row", rowNumber);
           return;
         }
       }
@@ -147,7 +152,7 @@ public class BulkUserImportServlet extends HttpServlet {
     if (groupName == null) return null;
     String groupId = groupNameToId.get(groupName);
     if (groupId == null) {
-      throw new IllegalArgumentException("Group not found: " + groupName);
+      throw new BulkImportRowException("Group not found: " + groupName);
     }
     return groupId;
   }
@@ -183,7 +188,7 @@ public class BulkUserImportServlet extends HttpServlet {
     Practitioner existing = practitionerService.getPractitioner(practitionerId);
     String iamUserId = practitionerService.extractIamUserId(existing);
     if (iamUserId == null) {
-      throw new IllegalStateException("Practitioner " + practitionerId + " has no IAM identifier");
+      throw new BulkImportRowException("Practitioner " + practitionerId + " has no IAM identifier");
     }
 
     iamProviderService.updateUser(iamUserId, user);
