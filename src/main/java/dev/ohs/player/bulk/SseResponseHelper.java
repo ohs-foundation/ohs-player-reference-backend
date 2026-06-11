@@ -29,4 +29,16 @@ public class SseResponseHelper {
     writer.write("data: {\"error\":\"" + escaped + "\",\"row\":" + row + "}\n\n");
     writer.flush();
   }
+
+  public void emitDone(PrintWriter writer, int processed, int failed, int total) {
+    writer.write(
+        "data: {\"done\":true,\"processed\":"
+            + processed
+            + ",\"failed\":"
+            + failed
+            + ",\"total\":"
+            + total
+            + "}\n\n");
+    writer.flush();
+  }
 }
