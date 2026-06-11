@@ -32,6 +32,15 @@ public class IamUser {
   private String nationalId;
 
   /**
+   * Optional. Not supported by all IAM providers. Maps to a {@code Practitioner.identifier} with
+   * system {@code http://ohs.dev/identifiers/source-id}. Also used as an alternate lookup key for
+   * bulk import updates.
+   */
+  @JsonProperty("source_id")
+  @Nullable
+  private String sourceId;
+
+  /**
    * Optional. Not supported by all IAM providers. Maps to {@code Practitioner.telecom}
    * (phone/mobile).
    */

@@ -4,6 +4,7 @@ import ca.uhn.fhir.context.FhirContext;
 import ca.uhn.fhir.rest.server.exceptions.BaseServerResponseException;
 import dev.ohs.player.fhir.PractitionerService;
 import dev.ohs.player.iam.IamGroupRepresentation;
+import dev.ohs.player.iam.IamProviderException;
 import dev.ohs.player.iam.IamProviderService;
 import dev.ohs.player.iam.IamUser;
 import dev.ohs.player.iam.PasswordUpdate;
@@ -66,7 +67,15 @@ public class UserManagementServlet extends HttpServlet {
     }
 
     if (user.getGroupIds() != null) {
-      assignUserGroups(iamUserId, user.getGroupIds());
+      try {
+        assignUserGroups(iamUserId, user.getGroupIds());
+      } catch (Exception e) {
+        logger.error("Group assignment failed; rolling back user: {}", iamUserId, e);
+        rollbackNewUser(iamUserId, practitioner);
+        ServletResponseUtil.writeJsonError(
+            response, HttpServletResponse.SC_BAD_REQUEST, "Group not found: " + e.getMessage());
+        return;
+      }
     }
 
     String fhirJson = fhirContext.newJsonParser().encodeResourceToString(practitioner);
@@ -166,7 +175,14 @@ public class UserManagementServlet extends HttpServlet {
     }
 
     if (user.getGroupIds() != null) {
-      syncUserGroups(iamUserId, user.getGroupIds());
+      try {
+        syncUserGroups(iamUserId, user.getGroupIds());
+      } catch (Exception e) {
+        logger.error("Group sync failed for user: {}", iamUserId, e);
+        ServletResponseUtil.writeJsonError(
+            response, HttpServletResponse.SC_BAD_REQUEST, "Group not found: " + e.getMessage());
+        return;
+      }
     }
 
     String fhirJson = fhirContext.newJsonParser().encodeResourceToString(updated);
@@ -381,6 +397,9 @@ public class UserManagementServlet extends HttpServlet {
     for (String groupId : groupIds) {
       try {
         iamProviderService.addUserToGroup(iamUserId, groupId);
+      } catch (IamProviderException e) {
+        if (e.getStatusCode() >= 400 && e.getStatusCode() < 500) throw e;
+        logger.warn("Failed to assign user {} to group {}: {}", iamUserId, groupId, e.getMessage());
       } catch (Exception e) {
         logger.warn("Failed to assign user {} to group {}: {}", iamUserId, groupId, e.getMessage());
       }
@@ -403,6 +422,9 @@ public class UserManagementServlet extends HttpServlet {
       if (!current.contains(groupId)) {
         try {
           iamProviderService.addUserToGroup(iamUserId, groupId);
+        } catch (IamProviderException e) {
+          if (e.getStatusCode() >= 400 && e.getStatusCode() < 500) throw e;
+          logger.warn("Failed to add user {} to group {}: {}", iamUserId, groupId, e.getMessage());
         } catch (Exception e) {
           logger.warn("Failed to add user {} to group {}: {}", iamUserId, groupId, e.getMessage());
         }
@@ -413,6 +435,10 @@ public class UserManagementServlet extends HttpServlet {
       if (!desired.contains(groupId)) {
         try {
           iamProviderService.removeUserFromGroup(iamUserId, groupId);
+        } catch (IamProviderException e) {
+          if (e.getStatusCode() >= 400 && e.getStatusCode() < 500) throw e;
+          logger.warn(
+              "Failed to remove user {} from group {}: {}", iamUserId, groupId, e.getMessage());
         } catch (Exception e) {
           logger.warn(
               "Failed to remove user {} from group {}: {}", iamUserId, groupId, e.getMessage());
@@ -428,5 +454,19 @@ public class UserManagementServlet extends HttpServlet {
     } catch (Exception e) {
       logger.error("Failed to rollback IAM user: {}; manual cleanup required", iamUserId, e);
     }
+  }
+
+  private void rollbackNewUser(String iamUserId, Practitioner practitioner) {
+    String practitionerId = practitioner.getIdElement().getIdPart();
+    if (practitionerId != null && !practitionerId.isBlank()) {
+      try {
+        practitionerService.deletePractitioner(practitionerId);
+        logger.info("Successfully rolled back Practitioner: {}", practitionerId);
+      } catch (Exception e) {
+        logger.error(
+            "Failed to rollback Practitioner: {}; manual cleanup required", practitionerId, e);
+      }
+    }
+    rollbackIamUser(iamUserId);
   }
 }

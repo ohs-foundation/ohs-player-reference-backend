@@ -22,8 +22,11 @@ import org.slf4j.LoggerFactory;
 public class PractitionerService {
 
   private static final Logger logger = LoggerFactory.getLogger(PractitionerService.class);
-  static final String KEYCLOAK_IDENTIFIER_SYSTEM = "http://ohs.dev/identifiers/keycloak-user-id";
-  static final String NATIONAL_ID_IDENTIFIER_SYSTEM = "http://ohs.dev/identifiers/national-id";
+  public static final String KEYCLOAK_IDENTIFIER_SYSTEM =
+      "http://ohs.dev/identifiers/keycloak-user-id";
+  public static final String NATIONAL_ID_IDENTIFIER_SYSTEM =
+      "http://ohs.dev/identifiers/national-id";
+  public static final String SOURCE_ID_IDENTIFIER_SYSTEM = "http://ohs.dev/identifiers/source-id";
 
   private final FhirContext fhirContext;
   private final String fhirServerUrl;
@@ -90,6 +93,25 @@ public class PractitionerService {
         .orElse(null);
   }
 
+  public @Nullable String extractSourceId(Practitioner practitioner) {
+    return practitioner.getIdentifier().stream()
+        .filter(id -> SOURCE_ID_IDENTIFIER_SYSTEM.equals(id.getSystem()))
+        .map(Identifier::getValue)
+        .findFirst()
+        .orElse(null);
+  }
+
+  public @Nullable String findPractitionerIdByIdentifier(String system, String value) {
+    IGenericClient client = fhirContext.newRestfulGenericClient(fhirServerUrl);
+    String encoded = URLEncoder.encode(system + "|" + value, StandardCharsets.UTF_8);
+    String base = fhirServerUrl.endsWith("/") ? fhirServerUrl : fhirServerUrl + "/";
+    Bundle result =
+        client.fetchResourceFromUrl(
+            Bundle.class, base + "Practitioner?identifier=" + encoded + "&_elements=id");
+    if (result.getEntry().isEmpty()) return null;
+    return result.getEntry().get(0).getResource().getIdElement().getIdPart();
+  }
+
   private String buildSearchUrl(Map<String, String[]> params) {
     String base = fhirServerUrl.endsWith("/") ? fhirServerUrl : fhirServerUrl + "/";
     StringBuilder url = new StringBuilder(base).append("Practitioner");
@@ -123,6 +145,13 @@ public class PractitionerService {
       nationalIdIdentifier.setSystem(NATIONAL_ID_IDENTIFIER_SYSTEM);
       nationalIdIdentifier.setValue(user.getNationalId());
       practitioner.addIdentifier(nationalIdIdentifier);
+    }
+
+    if (user.getSourceId() != null && !user.getSourceId().isBlank()) {
+      Identifier sourceIdIdentifier = new Identifier();
+      sourceIdIdentifier.setSystem(SOURCE_ID_IDENTIFIER_SYSTEM);
+      sourceIdIdentifier.setValue(user.getSourceId());
+      practitioner.addIdentifier(sourceIdIdentifier);
     }
 
     HumanName name = new HumanName();

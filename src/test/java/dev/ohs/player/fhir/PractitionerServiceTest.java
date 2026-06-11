@@ -131,10 +131,33 @@ class PractitionerServiceTest {
   }
 
   @Test
+  void buildPractitioner_withSourceId_addsSourceIdIdentifier() {
+    IamUser user = minimalUser();
+    user.setSourceId("SRC-99");
+
+    Practitioner p = service.buildPractitioner(IAM_USER_ID, user);
+
+    Identifier sourceId = findIdentifier(p, PractitionerService.SOURCE_ID_IDENTIFIER_SYSTEM);
+    assertNotNull(sourceId);
+    assertEquals("SRC-99", sourceId.getValue());
+  }
+
+  @Test
+  void buildPractitioner_withNullSourceId_noSourceIdIdentifier() {
+    IamUser user = minimalUser();
+    user.setSourceId(null);
+
+    Practitioner p = service.buildPractitioner(IAM_USER_ID, user);
+
+    assertNull(findIdentifier(p, PractitionerService.SOURCE_ID_IDENTIFIER_SYSTEM));
+  }
+
+  @Test
   void buildPractitioner_withAllFields_setsAllProperties() {
     IamUser user = minimalUser();
     user.setPhone("+254700000000");
     user.setNationalId("NID-12345678");
+    user.setSourceId("SRC-99");
     user.setDob("1985-03-20");
     user.setGender("male");
 
@@ -144,6 +167,7 @@ class PractitionerServiceTest {
     assertNotNull(findTelecom(p, ContactPoint.ContactPointSystem.PHONE));
     assertNotNull(findIdentifier(p, PractitionerService.KEYCLOAK_IDENTIFIER_SYSTEM));
     assertNotNull(findIdentifier(p, PractitionerService.NATIONAL_ID_IDENTIFIER_SYSTEM));
+    assertNotNull(findIdentifier(p, PractitionerService.SOURCE_ID_IDENTIFIER_SYSTEM));
     assertEquals("1985-03-20", p.getBirthDateElement().getValueAsString());
     assertEquals(Enumerations.AdministrativeGender.MALE, p.getGender());
   }

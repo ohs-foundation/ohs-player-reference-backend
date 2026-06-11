@@ -174,6 +174,54 @@ The `email` field is always synced to `Practitioner.telecom` with `system=email`
 }
 ```
 
+## Bulk Import API
+
+### Bulk User Import
+
+| Method | Endpoint | Content-Type | Description |
+| --- | --- | --- | --- |
+| `POST` | `/api/bulk-import/users` | `multipart/form-data` | Import users from a CSV file with SSE progress |
+
+Upload a CSV file in the `file` field. The server streams [Server-Sent Events](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events) back as each row is processed.
+
+```bash
+curl -N --form file=@users.csv http://localhost:8081/api/bulk-import/users
+```
+
+**CSV columns** (header row required; column order does not matter):
+
+| Column | Required | Description |
+| --- | --- | --- |
+| `id` | No | FHIR Practitioner ID. If present, the row is an **update**. |
+| `username` | Yes | IAM username |
+| `first_name` | No | |
+| `last_name` | No | |
+| `email` | Yes | |
+| `group` | No | Group **name** (resolved to ID at import time). |
+| `password` | No | Defaults to `{username}123` if omitted. |
+| `is_password_temp` | No | `true` or `1` to mark password as temporary. |
+| `dob` | No | Date of birth (`YYYY-MM-DD`), maps to `Practitioner.birthDate`. |
+| `gender` | No | `male`, `female`, `other`, or `unknown`. |
+| `national_id` | No | Maps to `Practitioner.identifier` with system `http://ohs.dev/identifiers/national-id`. |
+| `phone` | No | Maps to `Practitioner.telecom` (`phone/mobile`). |
+| `source_id` | No | External reference ID. Maps to `Practitioner.identifier` with system `http://ohs.dev/identifiers/source-id`. Also used as an alternate lookup key for updates when `id` is absent. |
+
+**Create vs update resolution:** if `id` is present it takes precedence; otherwise `source_id` is used to look up an existing Practitioner (update if found, create if not); if neither is present a new user is created.
+
+**SSE event format:**
+
+```
+data: {"processed": 5, "total": 100}
+
+data: {"error": "Group not found: unknown-group", "row": 6}
+```
+
+A progress event is emitted after each successful row. On failure the error event is emitted and the stream closes — subsequent rows are not processed.
+
+**Note:** This endpoint is intended for initial bulk imports and is not meant for updates in production. It does not perform upsert logic beyond the simple `id` and `source_id` resolution described above. To avoid losing data, use the User Management API for ongoing user maintenance.
+
+---
+
 ## Practitioner Details API
 
 | Method | Endpoint | Description |
