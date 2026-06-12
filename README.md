@@ -324,6 +324,53 @@ curl -N --form file=@locations.csv http://localhost:8081/api/bulk-import/locatio
 
 ---
 
+### Bulk User Assignment Import
+
+| Method | Endpoint | Content-Type | Description |
+| --- | --- | --- | --- |
+| `POST` | `/api/bulk-import/user-assignments` | `multipart/form-data` | Create PractitionerRole resources from a CSV file with SSE progress |
+
+Upload a CSV file in the `file` field. The server streams [Server-Sent Events](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events) back as each row is processed.
+
+```bash
+curl -N --form file=@assignments.csv http://localhost:8081/api/bulk-import/user-assignments
+```
+
+**CSV columns** (header row required; column order does not matter):
+
+| Column | Required | Description |
+| --- | --- | --- |
+| `practitioner_id` | One of these two | Direct FHIR ID of the Practitioner |
+| `practitioner_source_id` | One of these two | Source ID of the Practitioner — resolved via `Practitioner.identifier` with system `http://ohs.dev/identifiers/source-id` |
+| `org_id` | No | Direct FHIR ID of the Organization. Sets `PractitionerRole.organization`. |
+| `org_source_id` | No | Source ID of the Organization — resolved via identifier lookup. Used when `org_id` is absent. |
+| `location_id` | No | Semicolon-separated list of FHIR Location IDs (e.g. `loc-1;loc-2`). Each ID is added to `PractitionerRole.location`. |
+| `location_source_id` | No | Semicolon-separated list of Location source IDs — each resolved via identifier lookup. Used when `location_id` is absent. |
+
+Each row creates one `PractitionerRole` resource linking the practitioner to an optional organization and zero or more locations. Multiple locations are specified as a semicolon-separated list in `location_id` or `location_source_id` (e.g. `LOC-A;LOC-B;LOC-C`). At least one of `practitioner_id` or `practitioner_source_id` must be present — rows missing both are skipped with an error event.
+
+**FHIR resource produced:**
+
+```json
+{
+  "resourceType": "PractitionerRole",
+  "active": true,
+  "practitioner": { "reference": "Practitioner/{id}" },
+  "organization": { "reference": "Organization/{id}" },
+  "location": [{ "reference": "Location/{id}" }]
+}
+```
+
+`organization` and `location` are omitted when the corresponding CSV columns are blank.
+
+**SSE event format:** identical to the org and location import format above.
+
+**Configuration:** uses the same `BULK_IMPORT_BATCH_SIZE` environment variable as the org and location imports.
+
+> **Re-run warning:** this endpoint is create-only. Each row always issues a `POST PractitionerRole`, so re-running the same CSV will create duplicate `PractitionerRole` resources. There is no `id` or `source_id` column for the role itself. Deduplicate or filter the CSV before re-submitting if you need to avoid duplicates.
+
+---
+
 ## Practitioner Details API
 
 | Method | Endpoint | Description |
