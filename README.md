@@ -220,6 +220,62 @@ A progress event is emitted after each successful row. On failure the error even
 
 **Note:** This endpoint is intended for initial bulk imports and is not meant for updates in production. It does not perform upsert logic beyond the simple `id` and `source_id` resolution described above. To avoid losing data, use the User Management API for ongoing user maintenance.
 
+### Bulk Organization Import
+
+| Method | Endpoint | Content-Type | Description |
+| --- | --- | --- | --- |
+| `POST` | `/api/bulk-import/organizations` | `multipart/form-data` | Import organizations from a CSV file with SSE progress |
+
+Upload a CSV file in the `file` field. The server streams [Server-Sent Events](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events) back as each row is processed.
+
+```bash
+curl -N --form file=@organizations.csv http://localhost:8081/api/bulk-import/organizations
+```
+
+**CSV columns** (header row required; column order does not matter):
+
+| Column | Required | Description |
+| --- | --- | --- |
+| `id` | No | FHIR Organization ID. If present, the row is an **update**. |
+| `name` | Yes | Organization name |
+| `source_id` | No | External reference ID. Maps to `Organization.identifier` with system `http://ohs.dev/identifiers/source-id`. Also used as an alternate lookup key for updates when `id` is absent. |
+| `is_team` | No | `true` or `1` to add `Organization.type` with code `team` (`http://terminology.hl7.org/CodeSystem/organization-type`). Defaults to false. |
+| `parent_id` | No | FHIR ID of the parent Organization. Sets `Organization.partOf`. |
+| `parent_name` | No | Name of the parent Organization. Resolved by FHIR name search. Used when `parent_id` is absent. |
+| `source_parent_id` | No | Source ID of the parent Organization. Resolved by identifier lookup. Takes precedence over `parent_name`. |
+| `phone` | No | Maps to `Organization.telecom` (`phone/work`). |
+| `email` | No | Maps to `Organization.telecom` (`email/work`). |
+| `physical_address` | No | Maps to `Organization.address` with `use=work`, `type=physical`. |
+| `postal_address` | No | Maps to `Organization.address` with `use=work`, `type=postal`. |
+
+**Create vs update resolution:** rows are submitted to the FHIR server as a BATCH bundle. If `id` is present the entry is a direct `PUT Organization/{id}`. If `source_id` is present the entry is a conditional `PUT Organization?identifier=…` (creates if absent, updates if found — idempotent). If neither is present the entry is a `POST Organization` (not idempotent; re-running creates a duplicate).
+
+**Parent resolution precedence:** `parent_id` > `source_parent_id` > `parent_name`. If any parent column is provided but no matching Organization is found, the row is skipped with an error event and processing continues. Rows without parent columns are imported without a `partOf` reference.
+
+**Ordering note:** Parent organizations must appear in earlier rows than their children, or be pre-existing in the FHIR server. When a child's parent appears earlier in the same batch, the batch is flushed early (committing the parent), then the child is retried in a new batch — no FHIR indexing lag and no manual ordering of the CSV required beyond parents preceding their children.
+
+**Idempotent re-runs:** when rows fail at the FHIR level the error is emitted per row and processing continues (remaining rows and batches are not skipped). Fix the failing rows and re-POST the full CSV — rows with `id` or `source_id` are safe to re-run without creating duplicates.
+
+**SSE event format:**
+
+```
+data: {"processed":50,"total":100}
+
+data: {"error":"Parent organization not found with name: Unknown","row":53}
+
+data: {"processed":95,"total":100}
+
+data: {"done":true,"processed":95,"failed":5,"total":100}
+```
+
+One progress event is emitted per completed batch (not per row). Error events are emitted per failed row. A terminal `done` event is always emitted when processing finishes — use `done` to detect stream end and `failed` to decide whether to re-run. Processing continues after errors so all failures are visible in a single pass.
+
+**Configuration:**
+
+| Environment variable | Default | Description |
+| --- | --- | --- |
+| `BULK_IMPORT_BATCH_SIZE` | `5` | Number of rows per FHIR BATCH bundle. The default is intentionally small for testing. **Change to `50` for production** to reduce FHIR HTTP round-trips significantly (e.g. 50K rows → ~1 000 bundle calls instead of ~50 000). |
+
 ---
 
 ## Practitioner Details API

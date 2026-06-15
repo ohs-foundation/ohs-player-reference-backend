@@ -1,6 +1,7 @@
 package dev.ohs.player.configs;
 
 import ca.uhn.fhir.context.FhirContext;
+import dev.ohs.player.bulk.BulkOrgImportServlet;
 import dev.ohs.player.bulk.BulkUserImportServlet;
 import dev.ohs.player.bulk.CsvProcessor;
 import dev.ohs.player.bulk.SseResponseHelper;
@@ -8,6 +9,7 @@ import dev.ohs.player.endpoints.GroupManagementServlet;
 import dev.ohs.player.endpoints.PractitionerDetailsServlet;
 import dev.ohs.player.endpoints.RolesServlet;
 import dev.ohs.player.endpoints.UserManagementServlet;
+import dev.ohs.player.fhir.OrganizationService;
 import dev.ohs.player.fhir.PractitionerDetailService;
 import dev.ohs.player.fhir.PractitionerService;
 import dev.ohs.player.iam.IamProviderService;
@@ -38,6 +40,8 @@ public class OhsPlayerBackendExtensionSpringConfiguration {
 
   @Autowired PractitionerDetailService practitionerDetailService;
 
+  @Autowired OrganizationService organizationService;
+
   @Bean
   public ServletRegistrationBean<UserManagementServlet> userManagementServlet() {
     return new ServletRegistrationBean<>(
@@ -61,6 +65,30 @@ public class OhsPlayerBackendExtensionSpringConfiguration {
     return new ServletRegistrationBean<>(
         new PractitionerDetailsServlet(practitionerDetailService, fhirContext),
         "/api/practitioner-details");
+  }
+
+  @Bean
+  public ServletRegistrationBean<BulkOrgImportServlet> bulkOrgImportServlet() {
+    // BULK_IMPORT_BATCH_SIZE: number of rows per FHIR BATCH bundle.
+    // Default is 5 (suitable for testing). Change to 50 for production deployments.
+    // See README for performance guidance.
+    String batchSizeEnv = System.getenv("BULK_IMPORT_BATCH_SIZE");
+    int batchSize = 5;
+    if (batchSizeEnv != null && !batchSizeEnv.isBlank()) {
+      try {
+        batchSize = Integer.parseInt(batchSizeEnv.trim());
+      } catch (NumberFormatException e) {
+        logger.warn(
+            "Invalid BULK_IMPORT_BATCH_SIZE '{}', using default {}", batchSizeEnv, batchSize);
+      }
+    }
+    ServletRegistrationBean<BulkOrgImportServlet> bean =
+        new ServletRegistrationBean<>(
+            new BulkOrgImportServlet(
+                organizationService, csvProcessor(), sseResponseHelper(), batchSize),
+            "/api/bulk-import/organizations");
+    bean.setMultipartConfig(new MultipartConfigElement("/tmp", 52428800, 52428800, 0));
+    return bean;
   }
 
   @Bean
