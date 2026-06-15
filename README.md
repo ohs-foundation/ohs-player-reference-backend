@@ -278,6 +278,52 @@ One progress event is emitted per completed batch (not per row). Error events ar
 
 ---
 
+### Bulk Location Import
+
+| Method | Endpoint | Content-Type | Description |
+| --- | --- | --- | --- |
+| `POST` | `/api/bulk-import/locations` | `multipart/form-data` | Import locations from a CSV file with SSE progress |
+
+Upload a CSV file in the `file` field. The server streams [Server-Sent Events](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events) back as each row is processed.
+
+```bash
+curl -N --form file=@locations.csv http://localhost:8081/api/bulk-import/locations
+```
+
+**CSV columns** (header row required; column order does not matter):
+
+| Column | Required | Description |
+| --- | --- | --- |
+| `id` | No | FHIR Location ID. If present, the row is an **update**. |
+| `name` | Yes | Location name |
+| `physical_type` | No | Physical type display name (e.g. `building`, `ward`, `room`). See table below. |
+| `level` | No | Administrative level code (e.g. `country`, `county`). Maps to `Location.type` with system `http://ohs.dev/codes/administrative-level`. |
+| `longitude` | No | Decimal longitude. Set together with `latitude` to populate `Location.position`. |
+| `latitude` | No | Decimal latitude. Set together with `longitude` to populate `Location.position`. |
+| `source_id` | No | External reference ID. Maps to `Location.identifier` with system `http://ohs.dev/identifiers/source-id`. Also used as an alternate lookup key for updates when `id` is absent. |
+| `parent_id` | No | FHIR ID of the parent Location. Sets `Location.partOf`. |
+| `source_parent_id` | No | Source ID of the parent Location. Resolved by identifier lookup. |
+| `org_id` | No | FHIR ID of the managing Organization. Sets `Location.managingOrganization`. |
+| `source_org_id` | No | Source ID of the managing Organization. Resolved by identifier lookup. |
+
+**physical_type values:** accepts any display name from the [FHIR R4 location-physical-type valueset](https://hl7.org/fhir/R4/valueset-location-physical-type.html) (e.g. `building`, `ward`, `room`). Non-empty values not in the valueset are mapped to code `other` with the entered text (capitalized) as the display. Blank values are ignored.
+
+**Materialized path aliases:** each imported Location gets two `alias` entries — a `/`-separated path of ancestor names ending with the current location's name (e.g. `Country/County/Clinic A`), and the equivalent path of FHIR IDs (e.g. `fhir-id-country/fhir-id-county/fhir-id-clinic`).
+
+**Parent resolution precedence:** `parent_id` > `source_parent_id`. If a parent column is provided but no matching Location is found, the row is skipped with an error event and processing continues.
+
+**Managing organization resolution:** `org_id` > `source_org_id`. If provided but not found, the row is skipped with an error event and processing continues.
+
+**Create vs update resolution:** same as org import — `id` → direct `PUT Location/{id}`; `source_id` → conditional `PUT Location?identifier=…` (idempotent); neither → `POST Location` (not idempotent on re-run).
+
+**Ordering note:** Parent locations must appear in earlier rows than their children, or be pre-existing in the FHIR server. When a child's parent appears earlier in the same batch, the batch is flushed early, then the child is retried in a new batch.
+
+**SSE event format:** identical to the org import format above.
+
+**Configuration:** uses the same `BULK_IMPORT_BATCH_SIZE` environment variable as the org import.
+
+---
+
 ## Practitioner Details API
 
 | Method | Endpoint | Description |

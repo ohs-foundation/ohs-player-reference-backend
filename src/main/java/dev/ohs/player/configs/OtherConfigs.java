@@ -1,6 +1,7 @@
 package dev.ohs.player.configs;
 
 import ca.uhn.fhir.context.FhirContext;
+import dev.ohs.player.fhir.LocationService;
 import dev.ohs.player.fhir.OrganizationService;
 import dev.ohs.player.fhir.PractitionerDetailService;
 import dev.ohs.player.fhir.PractitionerService;
@@ -100,5 +101,14 @@ public class OtherConfigs {
       throw new IllegalStateException("PROXY_TO environment variable is not set");
     }
     return new PractitionerDetailService(fhirContext(), fhirServerUrl);
+  }
+
+  @Bean
+  public LocationService locationService() {
+    String fhirServerUrl = System.getenv(PROXY_TO_ENV);
+    if (fhirServerUrl == null || fhirServerUrl.isBlank()) {
+      throw new IllegalStateException("PROXY_TO environment variable is not set");
+    }
+    return new LocationService(fhirContext(), fhirServerUrl);
   }
 }
