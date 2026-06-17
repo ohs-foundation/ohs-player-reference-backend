@@ -3,6 +3,7 @@ package dev.ohs.player.configs;
 import ca.uhn.fhir.context.FhirContext;
 import dev.ohs.player.bulk.BulkLocationImportServlet;
 import dev.ohs.player.bulk.BulkOrgImportServlet;
+import dev.ohs.player.bulk.BulkUserAssignmentServlet;
 import dev.ohs.player.bulk.BulkUserImportServlet;
 import dev.ohs.player.bulk.CsvProcessor;
 import dev.ohs.player.bulk.SseResponseHelper;
@@ -13,6 +14,7 @@ import dev.ohs.player.endpoints.UserManagementServlet;
 import dev.ohs.player.fhir.LocationService;
 import dev.ohs.player.fhir.OrganizationService;
 import dev.ohs.player.fhir.PractitionerDetailService;
+import dev.ohs.player.fhir.PractitionerRoleService;
 import dev.ohs.player.fhir.PractitionerService;
 import dev.ohs.player.iam.IamProviderService;
 import jakarta.annotation.PostConstruct;
@@ -47,6 +49,8 @@ public class OhsPlayerBackendExtensionSpringConfiguration {
   @Autowired OrganizationService organizationService;
 
   @Autowired LocationService locationService;
+
+  @Autowired PractitionerRoleService practitionerRoleService;
 
   @Bean
   public ServletRegistrationBean<UserManagementServlet> userManagementServlet() {
@@ -139,6 +143,33 @@ public class OhsPlayerBackendExtensionSpringConfiguration {
             new BulkUserImportServlet(
                 iamProviderService, practitionerService, csvProcessor(), sseResponseHelper()),
             "/api/bulk-import/users");
+    bean.setMultipartConfig(new MultipartConfigElement("/tmp", 52428800, 52428800, 0));
+    return bean;
+  }
+
+  @Bean
+  public ServletRegistrationBean<BulkUserAssignmentServlet> bulkUserAssignmentServlet() {
+    String batchSizeEnv = System.getenv("BULK_IMPORT_BATCH_SIZE");
+    int batchSize = DEFAULT_BULK_IMPORT_BATCH_SIZE;
+    if (batchSizeEnv != null && !batchSizeEnv.isBlank()) {
+      try {
+        batchSize = Integer.parseInt(batchSizeEnv.trim());
+      } catch (NumberFormatException e) {
+        logger.warn(
+            "Invalid BULK_IMPORT_BATCH_SIZE '{}', using default {}", batchSizeEnv, batchSize);
+      }
+    }
+    ServletRegistrationBean<BulkUserAssignmentServlet> bean =
+        new ServletRegistrationBean<>(
+            new BulkUserAssignmentServlet(
+                practitionerRoleService,
+                practitionerService,
+                organizationService,
+                locationService,
+                csvProcessor(),
+                sseResponseHelper(),
+                batchSize),
+            "/api/bulk-import/user-assignments");
     bean.setMultipartConfig(new MultipartConfigElement("/tmp", 52428800, 52428800, 0));
     return bean;
   }
