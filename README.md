@@ -402,6 +402,38 @@ When `iam-id` is supplied the endpoint first resolves the FHIR Practitioner ID (
 
 Returns `404` when no matching practitioner or roles are found, and `400` when neither `iam-id` nor `practitioner-id` is provided.
 
+## Authentication & Authorization
+
+All `/api/*` endpoints require a valid JWT Bearer token.
+
+```
+Authorization: Bearer <access_token>
+```
+
+### Token validation
+
+On startup the plugin performs OIDC discovery at `{TOKEN_ISSUER}/.well-known/openid-configuration` to obtain the `jwks_uri`, then validates incoming tokens offline using the provider's public keys. Tokens are checked for valid signature, correct issuer, and expiry.
+
+### Role model
+
+Authorization uses a per-resource, three-level hierarchy. Higher levels satisfy lower-level checks: **manage ⊇ edit ⊇ view**.
+
+| Role | Grants access to                                                                                   |
+| --- |----------------------------------------------------------------------------------------------------|
+| `users.view` | `GET /api/users/*`                                                                                 |
+| `users.edit` | `users.view` + `POST /api/users`, `PUT /api/users/{id}`, `PUT /api/users/{id}/password`            |
+| `users.manage` | `users.edit` + `DELETE /api/users/{id}`                                                            |
+| `groups.view` | `GET /api/groups/*`                                                                                |
+| `groups.edit` | `groups.view` + `POST /api/groups`, `PUT /api/groups/{id}`, `POST /api/groups/{gid}/members/{uid}` |
+| `groups.manage` | `groups.edit` + `DELETE /api/groups/{id}`, `DELETE /api/groups/{gid}/members/{uid}`                             |
+| `bulk-import.manage` | `POST /api/bulk-import/*`                                                                          |
+| `roles.view` | `GET /api/roles`                                                                                   |
+| `practitioner-details.view` | `GET /api/practitioner-details`                                                                    |
+
+Roles are read from the JWT claim path returned by the configured IAM provider. For Keycloak this is `realm_access.roles`. A token missing the required role receives `403 Forbidden`; a missing or invalid token receives `401 Unauthorized`.
+
+---
+
 ## Keycloak Setup
 
 A set up of a Keycloak OAuth2 client with client credentials grant type is required to manage users. 

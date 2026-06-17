@@ -7,6 +7,8 @@ import static org.mockito.Mockito.*;
 
 import ca.uhn.fhir.context.FhirContext;
 import ca.uhn.fhir.parser.IParser;
+import dev.ohs.player.auth.AuthenticatedUser;
+import dev.ohs.player.auth.AuthorizationHandler;
 import dev.ohs.player.fhir.PractitionerDetail;
 import dev.ohs.player.fhir.PractitionerDetailService;
 import dev.ohs.player.fhir.PractitionerRoleDetail;
@@ -15,6 +17,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.util.List;
+import java.util.Set;
 import org.hl7.fhir.r4.model.Organization;
 import org.hl7.fhir.r4.model.Practitioner;
 import org.hl7.fhir.r4.model.PractitionerRole;
@@ -48,6 +51,10 @@ class PractitionerDetailsServletTest {
     lenient()
         .when(fhirParser.encodeResourceToString(any()))
         .thenReturn("{\"resourceType\":\"Practitioner\"}");
+    lenient()
+        .when(request.getAttribute(AuthorizationHandler.AUTH_USER_ATTRIBUTE))
+        .thenReturn(
+            new AuthenticatedUser("user-id", "test-user", Set.of("practitioner-details.view")));
   }
 
   // -------------------------------------------------------------------------

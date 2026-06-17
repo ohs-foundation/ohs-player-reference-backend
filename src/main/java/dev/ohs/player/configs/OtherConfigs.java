@@ -1,6 +1,7 @@
 package dev.ohs.player.configs;
 
 import ca.uhn.fhir.context.FhirContext;
+import dev.ohs.player.auth.JwtTokenValidator;
 import dev.ohs.player.fhir.LocationService;
 import dev.ohs.player.fhir.OrganizationService;
 import dev.ohs.player.fhir.PractitionerDetailService;
@@ -30,6 +31,15 @@ public class OtherConfigs {
 
   @Value("${iam.provider.client-secret:}")
   private String iamProviderClientSecret;
+
+  @Bean
+  public JwtTokenValidator jwtTokenValidator() {
+    String tokenIssuer = System.getenv(TOKEN_ISSUER_ENV);
+    if (tokenIssuer == null || tokenIssuer.isBlank()) {
+      throw new IllegalStateException("TOKEN_ISSUER environment variable is not set");
+    }
+    return new JwtTokenValidator(tokenIssuer, iamProviderService());
+  }
 
   @Bean
   public IamProviderService iamProviderService() {

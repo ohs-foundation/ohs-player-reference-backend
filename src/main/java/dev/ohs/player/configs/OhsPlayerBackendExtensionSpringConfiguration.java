@@ -1,6 +1,8 @@
 package dev.ohs.player.configs;
 
 import ca.uhn.fhir.context.FhirContext;
+import dev.ohs.player.auth.JwtAuthFilter;
+import dev.ohs.player.auth.JwtTokenValidator;
 import dev.ohs.player.bulk.BulkLocationImportServlet;
 import dev.ohs.player.bulk.BulkOrgImportServlet;
 import dev.ohs.player.bulk.BulkUserAssignmentServlet;
@@ -21,6 +23,7 @@ import jakarta.annotation.PostConstruct;
 import jakarta.servlet.MultipartConfigElement;
 import org.slf4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.boot.web.servlet.ServletRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -51,6 +54,16 @@ public class OhsPlayerBackendExtensionSpringConfiguration {
   @Autowired LocationService locationService;
 
   @Autowired PractitionerRoleService practitionerRoleService;
+
+  @Autowired JwtTokenValidator jwtTokenValidator;
+
+  @Bean
+  public FilterRegistrationBean<JwtAuthFilter> jwtAuthFilter() {
+    FilterRegistrationBean<JwtAuthFilter> bean = new FilterRegistrationBean<>();
+    bean.setFilter(new JwtAuthFilter(jwtTokenValidator));
+    bean.addUrlPatterns("/api/*");
+    return bean;
+  }
 
   @Bean
   public ServletRegistrationBean<UserManagementServlet> userManagementServlet() {

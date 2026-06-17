@@ -5,6 +5,8 @@ import ca.uhn.fhir.parser.IParser;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import dev.ohs.player.auth.AuthorizationHandler;
+import dev.ohs.player.auth.RoleLevel;
 import dev.ohs.player.fhir.PractitionerDetail;
 import dev.ohs.player.fhir.PractitionerDetailService;
 import dev.ohs.player.fhir.PractitionerRoleDetail;
@@ -30,6 +32,8 @@ public class PractitionerDetailsServlet extends HttpServlet {
   @Override
   protected void doGet(HttpServletRequest request, HttpServletResponse response)
       throws IOException {
+    if (!AuthorizationHandler.require(request, response, "practitioner-details", RoleLevel.VIEW))
+      return;
     String iamId = request.getParameter("iam-id");
     String practitionerId = request.getParameter("practitioner-id");
     String organisationId = request.getParameter("organisation-id");

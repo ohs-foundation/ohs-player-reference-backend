@@ -1,5 +1,7 @@
 package dev.ohs.player.endpoints;
 
+import dev.ohs.player.auth.AuthorizationHandler;
+import dev.ohs.player.auth.RoleLevel;
 import dev.ohs.player.iam.AvailableRolesResponse;
 import dev.ohs.player.iam.IamProviderService;
 import jakarta.servlet.http.HttpServlet;
@@ -20,6 +22,7 @@ public class RolesServlet extends HttpServlet {
   @Override
   protected void doGet(HttpServletRequest request, HttpServletResponse response)
       throws IOException {
+    if (!AuthorizationHandler.require(request, response, "roles", RoleLevel.VIEW)) return;
     try {
       AvailableRolesResponse roles = iamProviderService.listAvailableRoles();
       ServletResponseUtil.writeJsonResponse(response, HttpServletResponse.SC_OK, roles);

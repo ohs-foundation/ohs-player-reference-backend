@@ -2,6 +2,8 @@ package dev.ohs.player.endpoints;
 
 import ca.uhn.fhir.context.FhirContext;
 import ca.uhn.fhir.rest.server.exceptions.BaseServerResponseException;
+import dev.ohs.player.auth.AuthorizationHandler;
+import dev.ohs.player.auth.RoleLevel;
 import dev.ohs.player.fhir.PractitionerService;
 import dev.ohs.player.iam.IamGroupRepresentation;
 import dev.ohs.player.iam.IamProviderException;
@@ -37,6 +39,7 @@ public class UserManagementServlet extends HttpServlet {
   @Override
   protected void doPost(HttpServletRequest request, HttpServletResponse response)
       throws IOException {
+    if (!AuthorizationHandler.require(request, response, "users", RoleLevel.EDIT)) return;
     IamUser user = parseRequestBody(request, response);
     if (user == null) return;
     if (!validateRequiredFields(user, response)) return;
@@ -89,6 +92,7 @@ public class UserManagementServlet extends HttpServlet {
   @Override
   protected void doGet(HttpServletRequest request, HttpServletResponse response)
       throws IOException {
+    if (!AuthorizationHandler.require(request, response, "users", RoleLevel.VIEW)) return;
     String pathInfo = request.getPathInfo();
 
     if (pathInfo == null || pathInfo.equals("/")) {
@@ -107,6 +111,7 @@ public class UserManagementServlet extends HttpServlet {
   @Override
   protected void doPut(HttpServletRequest request, HttpServletResponse response)
       throws IOException {
+    if (!AuthorizationHandler.require(request, response, "users", RoleLevel.EDIT)) return;
     String pathInfo = request.getPathInfo();
 
     if (isPasswordResetPath(pathInfo)) {
@@ -193,6 +198,7 @@ public class UserManagementServlet extends HttpServlet {
   @Override
   protected void doDelete(HttpServletRequest request, HttpServletResponse response)
       throws IOException {
+    if (!AuthorizationHandler.require(request, response, "users", RoleLevel.MANAGE)) return;
     String practitionerId = extractIdFromPath(request.getPathInfo());
     if (practitionerId == null) {
       ServletResponseUtil.writeJsonError(
