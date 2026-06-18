@@ -724,4 +724,59 @@ class UserManagementServletTest {
     rep.setId(id);
     return rep;
   }
+
+  // -------------------------------------------------------------------------
+  // Auth enforcement
+  // -------------------------------------------------------------------------
+
+  @Test
+  void doGet_NoAuthUser_Returns401_NeverCallsDownstream() throws Exception {
+    when(request.getAttribute(AuthorizationHandler.AUTH_USER_ATTRIBUTE)).thenReturn(null);
+
+    servlet.doGet(request, response);
+
+    verify(response).setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+    verifyNoInteractions(iamProviderService, practitionerService);
+  }
+
+  @Test
+  void doPost_NoAuthUser_Returns401_NeverCallsDownstream() throws Exception {
+    when(request.getAttribute(AuthorizationHandler.AUTH_USER_ATTRIBUTE)).thenReturn(null);
+
+    servlet.doPost(request, response);
+
+    verify(response).setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+    verifyNoInteractions(iamProviderService, practitionerService);
+  }
+
+  @Test
+  void doPut_NoAuthUser_Returns401_NeverCallsDownstream() throws Exception {
+    when(request.getAttribute(AuthorizationHandler.AUTH_USER_ATTRIBUTE)).thenReturn(null);
+
+    servlet.doPut(request, response);
+
+    verify(response).setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+    verifyNoInteractions(iamProviderService, practitionerService);
+  }
+
+  @Test
+  void doDelete_NoAuthUser_Returns401_NeverCallsDownstream() throws Exception {
+    when(request.getAttribute(AuthorizationHandler.AUTH_USER_ATTRIBUTE)).thenReturn(null);
+
+    servlet.doDelete(request, response);
+
+    verify(response).setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+    verifyNoInteractions(iamProviderService, practitionerService);
+  }
+
+  @Test
+  void doDelete_EditRoleOnly_Returns403_NeverCallsDownstream() throws Exception {
+    when(request.getAttribute(AuthorizationHandler.AUTH_USER_ATTRIBUTE))
+        .thenReturn(new AuthenticatedUser("id", "user", Set.of("users.edit")));
+
+    servlet.doDelete(request, response);
+
+    verify(response).setStatus(HttpServletResponse.SC_FORBIDDEN);
+    verifyNoInteractions(iamProviderService, practitionerService);
+  }
 }

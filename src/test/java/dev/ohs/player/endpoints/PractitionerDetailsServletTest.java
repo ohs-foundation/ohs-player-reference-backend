@@ -258,6 +258,20 @@ class PractitionerDetailsServletTest {
   }
 
   // -------------------------------------------------------------------------
+  // Auth enforcement
+  // -------------------------------------------------------------------------
+
+  @Test
+  void doGet_NoAuthUser_Returns401_NeverCallsDownstream() throws Exception {
+    when(request.getAttribute(AuthorizationHandler.AUTH_USER_ATTRIBUTE)).thenReturn(null);
+
+    servlet.doGet(request, response);
+
+    verify(response).setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+    verifyNoInteractions(practitionerDetailService);
+  }
+
+  // -------------------------------------------------------------------------
   // Helpers
   // -------------------------------------------------------------------------
 

@@ -4,9 +4,11 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
+import dev.ohs.player.iam.AvailableRolesResponse;
 import dev.ohs.player.iam.IamGroup;
 import dev.ohs.player.iam.IamGroupRepresentation;
 import dev.ohs.player.iam.IamProviderException;
+import dev.ohs.player.iam.IamUser;
 import jakarta.ws.rs.WebApplicationException;
 import java.lang.reflect.Field;
 import java.util.Collections;
@@ -19,20 +21,265 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.keycloak.admin.client.Keycloak;
+import org.keycloak.admin.client.resource.ClientResource;
+import org.keycloak.admin.client.resource.ClientsResource;
 import org.keycloak.admin.client.resource.GroupResource;
 import org.keycloak.admin.client.resource.GroupsResource;
 import org.keycloak.admin.client.resource.RealmResource;
 import org.keycloak.admin.client.resource.RoleMappingResource;
 import org.keycloak.admin.client.resource.RoleScopeResource;
+import org.keycloak.admin.client.resource.RolesResource;
 import org.keycloak.admin.client.resource.UserResource;
 import org.keycloak.admin.client.resource.UsersResource;
+import org.keycloak.representations.idm.ClientRepresentation;
+import org.keycloak.representations.idm.CredentialRepresentation;
 import org.keycloak.representations.idm.GroupRepresentation;
 import org.keycloak.representations.idm.MappingsRepresentation;
 import org.keycloak.representations.idm.RoleRepresentation;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 class KeycloakIamProviderTest {
+
+  private static final String SERVER_URL = "http://keycloak";
+  private static final String REALM = "test-realm";
+  private static final String CLIENT_ID = "client-id";
+  private static final String CLIENT_SECRET = "client-secret";
+
+  // -------------------------------------------------------------------------
+  // User management — requires mocked Keycloak admin client
+  // -------------------------------------------------------------------------
+
+  @Nested
+  @ExtendWith(MockitoExtension.class)
+  class UserManagement {
+
+    @Mock private Keycloak mockKeycloak;
+    @Mock private RealmResource mockRealm;
+    @Mock private UsersResource mockUsersResource;
+    @Mock private UserResource mockUserResource;
+    @Mock private jakarta.ws.rs.core.Response mockResponse;
+
+    private KeycloakIamProvider provider;
+
+    private static final String IAM_USER_ID = "keycloak-uuid-123";
+
+    @BeforeEach
+    void setUp() throws Exception {
+      provider = new KeycloakIamProvider(SERVER_URL, REALM, CLIENT_ID, CLIENT_SECRET);
+      Field keycloakField = KeycloakIamProvider.class.getDeclaredField("keycloak");
+      keycloakField.setAccessible(true);
+      keycloakField.set(provider, mockKeycloak);
+
+      lenient().when(mockKeycloak.realm(REALM)).thenReturn(mockRealm);
+      lenient().when(mockRealm.users()).thenReturn(mockUsersResource);
+      lenient().when(mockUsersResource.get(IAM_USER_ID)).thenReturn(mockUserResource);
+    }
+
+    // createUser
+
+    @Test
+    void createUser_HappyPath_ReturnsExtractedUserId() {
+      when(mockUsersResource.create(any())).thenReturn(mockResponse);
+      when(mockResponse.getStatus()).thenReturn(201);
+      when(mockResponse.getHeaderString("Location"))
+          .thenReturn(SERVER_URL + "/admin/realms/" + REALM + "/users/" + IAM_USER_ID);
+
+      String result = provider.createUser(iamUser("alice"));
+
+      assertEquals(IAM_USER_ID, result);
+    }
+
+    @Test
+    void createUser_IamReturnsNon201_ThrowsIamProviderExceptionWithUpstreamStatus() {
+      when(mockUsersResource.create(any())).thenReturn(mockResponse);
+      when(mockResponse.getStatus()).thenReturn(409);
+      when(mockResponse.readEntity(String.class)).thenReturn("Conflict");
+
+      IamProviderException ex =
+          assertThrows(IamProviderException.class, () -> provider.createUser(iamUser("alice")));
+      assertEquals(409, ex.getStatusCode());
+    }
+
+    @Test
+    void createUser_IamThrows_WrapsAsIamProviderException() {
+      when(mockUsersResource.create(any())).thenThrow(new RuntimeException("connection refused"));
+
+      assertThrows(IamProviderException.class, () -> provider.createUser(iamUser("alice")));
+    }
+
+    // updateUser
+
+    @Test
+    void updateUser_HappyPath_CallsKeycloakUpdate() {
+      provider.updateUser(IAM_USER_ID, iamUser("alice"));
+
+      verify(mockUserResource).update(any());
+    }
+
+    @Test
+    void updateUser_IamThrows_WrapsAsIamProviderException() {
+      doThrow(new RuntimeException("IAM error")).when(mockUserResource).update(any());
+
+      assertThrows(
+          IamProviderException.class, () -> provider.updateUser(IAM_USER_ID, iamUser("alice")));
+    }
+
+    // deleteUser
+
+    @Test
+    void deleteUser_HappyPath_CallsKeycloakRemove() {
+      provider.deleteUser(IAM_USER_ID);
+
+      verify(mockUserResource).remove();
+    }
+
+    @Test
+    void deleteUser_IamThrows_WrapsAsIamProviderException() {
+      doThrow(new RuntimeException("not found")).when(mockUserResource).remove();
+
+      assertThrows(IamProviderException.class, () -> provider.deleteUser(IAM_USER_ID));
+    }
+
+    // resetPassword
+
+    @Test
+    void resetPassword_TemporaryFalse_SetsCorrectCredential() {
+      provider.resetPassword(IAM_USER_ID, "secret123", false);
+
+      ArgumentCaptor<CredentialRepresentation> captor =
+          ArgumentCaptor.forClass(CredentialRepresentation.class);
+      verify(mockUserResource).resetPassword(captor.capture());
+      CredentialRepresentation cred = captor.getValue();
+      assertEquals("secret123", cred.getValue());
+      assertFalse(cred.isTemporary());
+      assertEquals(CredentialRepresentation.PASSWORD, cred.getType());
+    }
+
+    @Test
+    void resetPassword_TemporaryTrue_SetsCorrectCredential() {
+      provider.resetPassword(IAM_USER_ID, "temp-pass", true);
+
+      ArgumentCaptor<CredentialRepresentation> captor =
+          ArgumentCaptor.forClass(CredentialRepresentation.class);
+      verify(mockUserResource).resetPassword(captor.capture());
+      assertTrue(captor.getValue().isTemporary());
+    }
+
+    @Test
+    void resetPassword_IamThrows_WrapsAsIamProviderException() {
+      doThrow(new RuntimeException("IAM error")).when(mockUserResource).resetPassword(any());
+
+      assertThrows(
+          IamProviderException.class, () -> provider.resetPassword(IAM_USER_ID, "pass", false));
+    }
+
+    private IamUser iamUser(String username) {
+      IamUser user = new IamUser();
+      user.setUsername(username);
+      user.setEmail(username + "@example.com");
+      user.setEnabled(true);
+      return user;
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Role discovery — requires mocked Keycloak admin client
+  // -------------------------------------------------------------------------
+
+  @Nested
+  @ExtendWith(MockitoExtension.class)
+  class RoleDiscovery {
+
+    @Mock private Keycloak mockKeycloak;
+    @Mock private RealmResource mockRealm;
+    @Mock private RolesResource mockRolesResource;
+    @Mock private ClientsResource mockClientsResource;
+    @Mock private ClientResource mockClientResource;
+    @Mock private RolesResource mockClientRolesResource;
+
+    private KeycloakIamProvider provider;
+
+    private static final String CLIENT_UUID = "client-uuid-abc";
+
+    @BeforeEach
+    void setUp() throws Exception {
+      provider = new KeycloakIamProvider(SERVER_URL, REALM, CLIENT_ID, CLIENT_SECRET);
+      Field keycloakField = KeycloakIamProvider.class.getDeclaredField("keycloak");
+      keycloakField.setAccessible(true);
+      keycloakField.set(provider, mockKeycloak);
+
+      lenient().when(mockKeycloak.realm(REALM)).thenReturn(mockRealm);
+      lenient().when(mockRealm.roles()).thenReturn(mockRolesResource);
+      lenient().when(mockRealm.clients()).thenReturn(mockClientsResource);
+      lenient().when(mockClientsResource.get(CLIENT_UUID)).thenReturn(mockClientResource);
+      lenient().when(mockClientResource.roles()).thenReturn(mockClientRolesResource);
+    }
+
+    @Test
+    void listAvailableRoles_HappyPath_ReturnsRealmAndClientRoles() {
+      RoleRepresentation realmRole = roleRep("offline_access");
+      when(mockRolesResource.list()).thenReturn(List.of(realmRole));
+
+      ClientRepresentation clientRep = clientRep(CLIENT_UUID, CLIENT_ID);
+      when(mockClientsResource.findByClientId(CLIENT_ID)).thenReturn(List.of(clientRep));
+
+      RoleRepresentation clientRole = roleRep("practitioners.edit");
+      when(mockClientRolesResource.list()).thenReturn(List.of(clientRole));
+
+      AvailableRolesResponse result = provider.listAvailableRoles();
+
+      assertEquals(1, result.getRealmRoles().size());
+      assertEquals("offline_access", result.getRealmRoles().get(0).getName());
+      assertEquals(1, result.getClients().size());
+      assertEquals(CLIENT_ID, result.getClients().get(0).getClientId());
+      assertEquals(1, result.getClients().get(0).getRoles().size());
+      assertEquals("practitioners.edit", result.getClients().get(0).getRoles().get(0).getName());
+    }
+
+    @Test
+    void listAvailableRoles_ClientNotFound_ThrowsIamProviderException404() {
+      when(mockRolesResource.list()).thenReturn(Collections.emptyList());
+      when(mockClientsResource.findByClientId(CLIENT_ID)).thenReturn(Collections.emptyList());
+
+      IamProviderException ex =
+          assertThrows(IamProviderException.class, () -> provider.listAvailableRoles());
+      assertEquals(404, ex.getStatusCode());
+    }
+
+    @Test
+    void listAvailableRoles_NullClientRoles_TreatedAsEmptyList() {
+      when(mockRolesResource.list()).thenReturn(Collections.emptyList());
+      when(mockClientsResource.findByClientId(CLIENT_ID))
+          .thenReturn(List.of(clientRep(CLIENT_UUID, CLIENT_ID)));
+      when(mockClientRolesResource.list()).thenReturn(null);
+
+      AvailableRolesResponse result = provider.listAvailableRoles();
+
+      assertTrue(result.getClients().get(0).getRoles().isEmpty());
+    }
+
+    @Test
+    void listAvailableRoles_IamThrows_WrapsAsIamProviderException() {
+      when(mockRolesResource.list()).thenThrow(new RuntimeException("IAM unavailable"));
+
+      assertThrows(IamProviderException.class, () -> provider.listAvailableRoles());
+    }
+
+    private RoleRepresentation roleRep(String name) {
+      RoleRepresentation rep = new RoleRepresentation();
+      rep.setName(name);
+      return rep;
+    }
+
+    private ClientRepresentation clientRep(String id, String clientId) {
+      ClientRepresentation rep = new ClientRepresentation();
+      rep.setId(id);
+      rep.setClientId(clientId);
+      return rep;
+    }
+  }
 
   // -------------------------------------------------------------------------
   // Group management — requires mocked Keycloak admin client
@@ -54,13 +301,12 @@ class KeycloakIamProviderTest {
 
     private KeycloakIamProvider provider;
 
-    private static final String REALM = "test-realm";
     private static final String GROUP_ID = "group-id-123";
     private static final String IAM_USER_ID = "user-id-456";
 
     @BeforeEach
     void setUp() throws Exception {
-      provider = new KeycloakIamProvider("http://keycloak", REALM, "client-id", "client-secret");
+      provider = new KeycloakIamProvider(SERVER_URL, REALM, CLIENT_ID, CLIENT_SECRET);
       Field keycloakField = KeycloakIamProvider.class.getDeclaredField("keycloak");
       keycloakField.setAccessible(true);
       keycloakField.set(provider, mockKeycloak);
@@ -310,7 +556,7 @@ class KeycloakIamProviderTest {
       when(mockGroupsResource.add(any())).thenReturn(mockResponse);
       when(mockResponse.getStatus()).thenReturn(201);
       when(mockResponse.getHeaderString("Location"))
-          .thenReturn("http://keycloak/auth/admin/realms/" + REALM + "/groups/" + groupId);
+          .thenReturn(SERVER_URL + "/auth/admin/realms/" + REALM + "/groups/" + groupId);
     }
 
     private void givenGroupRepresentation(String id, String name, String path) {
@@ -333,7 +579,7 @@ class KeycloakIamProviderTest {
 
     @BeforeEach
     void setUp() {
-      provider = new KeycloakIamProvider("http://keycloak", "test-realm", "client-id", "secret");
+      provider = new KeycloakIamProvider(SERVER_URL, REALM, CLIENT_ID, CLIENT_SECRET);
     }
 
     @Test
