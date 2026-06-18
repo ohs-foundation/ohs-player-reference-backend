@@ -16,10 +16,12 @@ import com.nimbusds.jwt.proc.ConfigurableJWTProcessor;
 import com.nimbusds.jwt.proc.DefaultJWTProcessor;
 import dev.ohs.player.iam.IamProviderService;
 import java.util.Date;
+import java.util.Map;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -90,6 +92,60 @@ class JwtTokenValidatorTest {
 
     assertEquals(expectedRoles, user.getRoles());
     verify(iamProviderService).extractRolesFromToken(any());
+  }
+
+  @Test
+  void validate_PassesFullClaimsMapToIamProvider() throws Exception {
+    when(iamProviderService.extractRolesFromToken(any())).thenReturn(Set.of());
+    ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
+
+    String token = signToken(rsaKey, ISSUER, "user-123", "alice", 60);
+    validator.validate(token);
+
+    verify(iamProviderService).extractRolesFromToken(captor.capture());
+    Map<String, Object> capturedClaims = captor.getValue();
+    assertEquals("user-123", capturedClaims.get("sub"));
+    assertEquals(ISSUER, capturedClaims.get("iss"));
+    assertEquals("alice", capturedClaims.get("preferred_username"));
+  }
+
+  @Test
+  void validate_TokenSignedWithDifferentKey_ThrowsException() throws Exception {
+    RSAKey differentKey = new RSAKeyGenerator(2048).keyID("other-key").generate();
+
+    String token = signToken(differentKey, ISSUER, "user-123", "alice", 60);
+
+    assertThrows(Exception.class, () -> validator.validate(token));
+    verifyNoInteractions(iamProviderService);
+  }
+
+  @Test
+  void validate_TokenMissingSubClaim_ThrowsException() throws Exception {
+    JWTClaimsSet claims =
+        new JWTClaimsSet.Builder()
+            .issuer(ISSUER)
+            .expirationTime(new Date(System.currentTimeMillis() + 60_000L))
+            .issueTime(new Date())
+            .build();
+    SignedJWT jwt =
+        new SignedJWT(
+            new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(rsaKey.getKeyID()).build(), claims);
+    jwt.sign(new RSASSASigner(rsaKey));
+
+    assertThrows(BadJWTException.class, () -> validator.validate(jwt.serialize()));
+    verifyNoInteractions(iamProviderService);
+  }
+
+  @Test
+  void validate_MalformedToken_ThrowsException() {
+    assertThrows(Exception.class, () -> validator.validate("not.a.jwt"));
+    verifyNoInteractions(iamProviderService);
+  }
+
+  @Test
+  void validate_EmptyToken_ThrowsException() {
+    assertThrows(Exception.class, () -> validator.validate(""));
+    verifyNoInteractions(iamProviderService);
   }
 
   private static ConfigurableJWTProcessor<com.nimbusds.jose.proc.SecurityContext>
