@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
+import dev.ohs.player.auth.AuthenticatedUser;
+import dev.ohs.player.auth.AuthorizationHandler;
 import dev.ohs.player.fhir.OrganizationService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -12,6 +14,7 @@ import java.io.ByteArrayInputStream;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
+import java.util.Set;
 import org.hl7.fhir.r4.model.Bundle;
 import org.hl7.fhir.r4.model.OperationOutcome;
 import org.hl7.fhir.r4.model.Organization;
@@ -50,6 +53,9 @@ class BulkOrgImportServletTest {
     // buildOrganization has no external calls, so use the real implementation to let tests
     // inspect the bundle entries that the servlet builds.
     lenient().when(organizationService.buildOrganization(any())).thenCallRealMethod();
+    lenient()
+        .when(request.getAttribute(AuthorizationHandler.AUTH_USER_ATTRIBUTE))
+        .thenReturn(new AuthenticatedUser("user-id", "test-user", Set.of("bulk-import.manage")));
   }
 
   // -------------------------------------------------------------------------

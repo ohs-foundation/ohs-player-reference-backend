@@ -1,5 +1,7 @@
 package dev.ohs.player.endpoints;
 
+import dev.ohs.player.auth.AuthorizationHandler;
+import dev.ohs.player.auth.RoleLevel;
 import dev.ohs.player.iam.IamGroup;
 import dev.ohs.player.iam.IamGroupRepresentation;
 import dev.ohs.player.iam.IamProviderService;
@@ -23,6 +25,7 @@ public class GroupManagementServlet extends HttpServlet {
   @Override
   protected void doGet(HttpServletRequest request, HttpServletResponse response)
       throws IOException {
+    if (!AuthorizationHandler.require(request, response, "groups", RoleLevel.VIEW)) return;
     String pathInfo = request.getPathInfo();
 
     if (pathInfo == null || pathInfo.equals("/")) {
@@ -43,6 +46,7 @@ public class GroupManagementServlet extends HttpServlet {
   @Override
   protected void doPost(HttpServletRequest request, HttpServletResponse response)
       throws IOException {
+    if (!AuthorizationHandler.require(request, response, "groups", RoleLevel.EDIT)) return;
     String pathInfo = request.getPathInfo();
 
     String[] memberPath = extractMemberPath(pathInfo);
@@ -63,6 +67,7 @@ public class GroupManagementServlet extends HttpServlet {
   @Override
   protected void doPut(HttpServletRequest request, HttpServletResponse response)
       throws IOException {
+    if (!AuthorizationHandler.require(request, response, "groups", RoleLevel.EDIT)) return;
     String pathInfo = request.getPathInfo();
     String groupId = extractGroupId(pathInfo);
     if (groupId == null) {
@@ -106,6 +111,7 @@ public class GroupManagementServlet extends HttpServlet {
   @Override
   protected void doDelete(HttpServletRequest request, HttpServletResponse response)
       throws IOException {
+    if (!AuthorizationHandler.require(request, response, "groups", RoleLevel.MANAGE)) return;
     String pathInfo = request.getPathInfo();
 
     String[] memberPath = extractMemberPath(pathInfo);

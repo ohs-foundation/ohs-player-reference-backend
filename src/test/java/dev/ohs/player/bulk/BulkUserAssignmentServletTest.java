@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
+import dev.ohs.player.auth.AuthenticatedUser;
+import dev.ohs.player.auth.AuthorizationHandler;
 import dev.ohs.player.fhir.LocationService;
 import dev.ohs.player.fhir.OrganizationService;
 import dev.ohs.player.fhir.PractitionerRoleService;
@@ -15,6 +17,7 @@ import java.io.ByteArrayInputStream;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
+import java.util.Set;
 import org.hl7.fhir.r4.model.Bundle;
 import org.hl7.fhir.r4.model.Location;
 import org.hl7.fhir.r4.model.OperationOutcome;
@@ -63,6 +66,9 @@ class BulkUserAssignmentServletTest {
     responseBuffer = new StringWriter();
     lenient().when(response.getWriter()).thenReturn(new PrintWriter(responseBuffer));
     lenient().when(practitionerRoleService.buildPractitionerRole(any())).thenCallRealMethod();
+    lenient()
+        .when(request.getAttribute(AuthorizationHandler.AUTH_USER_ATTRIBUTE))
+        .thenReturn(new AuthenticatedUser("user-id", "test-user", Set.of("bulk-import.manage")));
   }
 
   // -------------------------------------------------------------------------

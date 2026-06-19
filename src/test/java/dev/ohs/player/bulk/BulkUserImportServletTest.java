@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
+import dev.ohs.player.auth.AuthenticatedUser;
+import dev.ohs.player.auth.AuthorizationHandler;
 import dev.ohs.player.fhir.PractitionerService;
 import dev.ohs.player.iam.IamGroupRepresentation;
 import dev.ohs.player.iam.IamProviderService;
@@ -15,6 +17,7 @@ import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Set;
 import org.hl7.fhir.r4.model.Practitioner;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -48,6 +51,9 @@ class BulkUserImportServletTest {
         new BulkUserImportServlet(iamProviderService, practitionerService, csvProcessor, sseHelper);
     responseBuffer = new StringWriter();
     lenient().when(response.getWriter()).thenReturn(new PrintWriter(responseBuffer));
+    lenient()
+        .when(request.getAttribute(AuthorizationHandler.AUTH_USER_ATTRIBUTE))
+        .thenReturn(new AuthenticatedUser("user-id", "test-user", Set.of("bulk-import.manage")));
   }
 
   // -------------------------------------------------------------------------

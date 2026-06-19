@@ -11,8 +11,10 @@ import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.core.Response;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 import org.keycloak.OAuth2Constants;
 import org.keycloak.admin.client.Keycloak;
@@ -263,6 +265,29 @@ public class KeycloakIamProvider implements IamProviderService {
     } catch (Exception e) {
       throw wrap("Failed to list available roles from IAM provider", e);
     }
+  }
+
+  // --- Token introspection ---
+
+  @Override
+  public Set<String> extractRolesFromToken(Map<String, Object> claims) {
+    Object realmAccess = claims.get("realm_access");
+    if (!(realmAccess instanceof Map)) {
+      return Collections.emptySet();
+    }
+    Map<?, ?> realmAccessMap = (Map<?, ?>) realmAccess;
+    Object rolesObj = realmAccessMap.get("roles");
+    if (!(rolesObj instanceof List)) {
+      return Collections.emptySet();
+    }
+    List<?> rolesList = (List<?>) rolesObj;
+    Set<String> roles = new HashSet<>();
+    for (Object role : rolesList) {
+      if (role instanceof String) {
+        roles.add((String) role);
+      }
+    }
+    return roles;
   }
 
   // --- Private helpers ---

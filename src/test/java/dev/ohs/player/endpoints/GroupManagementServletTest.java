@@ -5,6 +5,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
+import dev.ohs.player.auth.AuthenticatedUser;
+import dev.ohs.player.auth.AuthorizationHandler;
 import dev.ohs.player.iam.IamGroupRepresentation;
 import dev.ohs.player.iam.IamProviderService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -15,6 +17,7 @@ import java.io.StringReader;
 import java.io.StringWriter;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -42,6 +45,9 @@ class GroupManagementServletTest {
     servlet = new GroupManagementServlet(iamProviderService);
     stringWriter = new StringWriter();
     lenient().when(response.getWriter()).thenReturn(new PrintWriter(stringWriter));
+    lenient()
+        .when(request.getAttribute(AuthorizationHandler.AUTH_USER_ATTRIBUTE))
+        .thenReturn(new AuthenticatedUser("user-id", "test-user", Set.of("groups.manage")));
   }
 
   private void givenRequestBody(String json) throws Exception {
@@ -349,5 +355,60 @@ class GroupManagementServletTest {
     servlet.doDelete(request, response);
 
     verify(response).setStatus(HttpServletResponse.SC_BAD_GATEWAY);
+  }
+
+  // -------------------------------------------------------------------------
+  // Auth enforcement
+  // -------------------------------------------------------------------------
+
+  @Test
+  void doGet_NoAuthUser_Returns401_NeverCallsDownstream() throws Exception {
+    when(request.getAttribute(AuthorizationHandler.AUTH_USER_ATTRIBUTE)).thenReturn(null);
+
+    servlet.doGet(request, response);
+
+    verify(response).setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+    verifyNoInteractions(iamProviderService);
+  }
+
+  @Test
+  void doPost_NoAuthUser_Returns401_NeverCallsDownstream() throws Exception {
+    when(request.getAttribute(AuthorizationHandler.AUTH_USER_ATTRIBUTE)).thenReturn(null);
+
+    servlet.doPost(request, response);
+
+    verify(response).setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+    verifyNoInteractions(iamProviderService);
+  }
+
+  @Test
+  void doPut_NoAuthUser_Returns401_NeverCallsDownstream() throws Exception {
+    when(request.getAttribute(AuthorizationHandler.AUTH_USER_ATTRIBUTE)).thenReturn(null);
+
+    servlet.doPut(request, response);
+
+    verify(response).setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+    verifyNoInteractions(iamProviderService);
+  }
+
+  @Test
+  void doDelete_NoAuthUser_Returns401_NeverCallsDownstream() throws Exception {
+    when(request.getAttribute(AuthorizationHandler.AUTH_USER_ATTRIBUTE)).thenReturn(null);
+
+    servlet.doDelete(request, response);
+
+    verify(response).setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+    verifyNoInteractions(iamProviderService);
+  }
+
+  @Test
+  void doDelete_EditRoleOnly_Returns403_NeverCallsDownstream() throws Exception {
+    when(request.getAttribute(AuthorizationHandler.AUTH_USER_ATTRIBUTE))
+        .thenReturn(new AuthenticatedUser("id", "user", Set.of("groups.edit")));
+
+    servlet.doDelete(request, response);
+
+    verify(response).setStatus(HttpServletResponse.SC_FORBIDDEN);
+    verifyNoInteractions(iamProviderService);
   }
 }

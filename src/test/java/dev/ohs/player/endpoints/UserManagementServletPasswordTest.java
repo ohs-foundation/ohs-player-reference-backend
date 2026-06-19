@@ -7,6 +7,8 @@ import static org.mockito.Mockito.*;
 import ca.uhn.fhir.context.FhirContext;
 import ca.uhn.fhir.parser.IParser;
 import ca.uhn.fhir.rest.server.exceptions.ResourceNotFoundException;
+import dev.ohs.player.auth.AuthenticatedUser;
+import dev.ohs.player.auth.AuthorizationHandler;
 import dev.ohs.player.fhir.PractitionerService;
 import dev.ohs.player.iam.IamProviderService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -15,6 +17,7 @@ import java.io.BufferedReader;
 import java.io.PrintWriter;
 import java.io.StringReader;
 import java.io.StringWriter;
+import java.util.Set;
 import org.hl7.fhir.r4.model.Practitioner;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -48,6 +51,9 @@ class UserManagementServletPasswordTest {
     lenient()
         .when(fhirParser.encodeResourceToString(any()))
         .thenReturn("{\"resourceType\":\"Practitioner\"}");
+    lenient()
+        .when(request.getAttribute(AuthorizationHandler.AUTH_USER_ATTRIBUTE))
+        .thenReturn(new AuthenticatedUser("user-id", "test-user", Set.of("users.manage")));
   }
 
   // -------------------------------------------------------------------------

@@ -8,6 +8,8 @@ import static org.mockito.Mockito.*;
 import ca.uhn.fhir.context.FhirContext;
 import ca.uhn.fhir.parser.IParser;
 import ca.uhn.fhir.rest.server.exceptions.ResourceNotFoundException;
+import dev.ohs.player.auth.AuthenticatedUser;
+import dev.ohs.player.auth.AuthorizationHandler;
 import dev.ohs.player.fhir.PractitionerService;
 import dev.ohs.player.iam.IamGroupRepresentation;
 import dev.ohs.player.iam.IamProviderService;
@@ -21,6 +23,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.hl7.fhir.r4.model.Bundle;
 import org.hl7.fhir.r4.model.Practitioner;
 import org.junit.jupiter.api.BeforeEach;
@@ -56,6 +59,9 @@ class UserManagementServletTest {
     lenient()
         .when(fhirParser.encodeResourceToString(any()))
         .thenReturn("{\"resourceType\":\"Practitioner\"}");
+    lenient()
+        .when(request.getAttribute(AuthorizationHandler.AUTH_USER_ATTRIBUTE))
+        .thenReturn(new AuthenticatedUser("user-id", "test-user", Set.of("users.manage")));
   }
 
   // -------------------------------------------------------------------------
@@ -717,5 +723,60 @@ class UserManagementServletTest {
     IamGroupRepresentation rep = new IamGroupRepresentation();
     rep.setId(id);
     return rep;
+  }
+
+  // -------------------------------------------------------------------------
+  // Auth enforcement
+  // -------------------------------------------------------------------------
+
+  @Test
+  void doGet_NoAuthUser_Returns401_NeverCallsDownstream() throws Exception {
+    when(request.getAttribute(AuthorizationHandler.AUTH_USER_ATTRIBUTE)).thenReturn(null);
+
+    servlet.doGet(request, response);
+
+    verify(response).setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+    verifyNoInteractions(iamProviderService, practitionerService);
+  }
+
+  @Test
+  void doPost_NoAuthUser_Returns401_NeverCallsDownstream() throws Exception {
+    when(request.getAttribute(AuthorizationHandler.AUTH_USER_ATTRIBUTE)).thenReturn(null);
+
+    servlet.doPost(request, response);
+
+    verify(response).setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+    verifyNoInteractions(iamProviderService, practitionerService);
+  }
+
+  @Test
+  void doPut_NoAuthUser_Returns401_NeverCallsDownstream() throws Exception {
+    when(request.getAttribute(AuthorizationHandler.AUTH_USER_ATTRIBUTE)).thenReturn(null);
+
+    servlet.doPut(request, response);
+
+    verify(response).setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+    verifyNoInteractions(iamProviderService, practitionerService);
+  }
+
+  @Test
+  void doDelete_NoAuthUser_Returns401_NeverCallsDownstream() throws Exception {
+    when(request.getAttribute(AuthorizationHandler.AUTH_USER_ATTRIBUTE)).thenReturn(null);
+
+    servlet.doDelete(request, response);
+
+    verify(response).setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+    verifyNoInteractions(iamProviderService, practitionerService);
+  }
+
+  @Test
+  void doDelete_EditRoleOnly_Returns403_NeverCallsDownstream() throws Exception {
+    when(request.getAttribute(AuthorizationHandler.AUTH_USER_ATTRIBUTE))
+        .thenReturn(new AuthenticatedUser("id", "user", Set.of("users.edit")));
+
+    servlet.doDelete(request, response);
+
+    verify(response).setStatus(HttpServletResponse.SC_FORBIDDEN);
+    verifyNoInteractions(iamProviderService, practitionerService);
   }
 }

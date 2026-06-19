@@ -1,5 +1,7 @@
 package dev.ohs.player.bulk;
 
+import dev.ohs.player.auth.AuthorizationHandler;
+import dev.ohs.player.auth.RoleLevel;
 import dev.ohs.player.endpoints.ServletResponseUtil;
 import dev.ohs.player.fhir.OrgData;
 import dev.ohs.player.fhir.OrganizationService;
@@ -40,6 +42,7 @@ public class BulkOrgImportServlet extends HttpServlet {
   @Override
   protected void doPost(HttpServletRequest request, HttpServletResponse response)
       throws IOException {
+    if (!AuthorizationHandler.require(request, response, "bulk-import", RoleLevel.MANAGE)) return;
     Part filePart;
     try {
       filePart = request.getPart("file");

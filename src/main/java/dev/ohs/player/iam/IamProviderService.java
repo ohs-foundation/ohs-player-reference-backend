@@ -1,6 +1,8 @@
 package dev.ohs.player.iam;
 
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 public interface IamProviderService {
 
@@ -38,4 +40,12 @@ public interface IamProviderService {
   // --- Role discovery ---
 
   AvailableRolesResponse listAvailableRoles();
+
+  // --- Token introspection ---
+
+  /**
+   * Extracts the set of role names from the given JWT claims map. Each IAM implementation is
+   * responsible for locating roles within the provider-specific claim structure.
+   */
+  Set<String> extractRolesFromToken(Map<String, Object> claims);
 }
