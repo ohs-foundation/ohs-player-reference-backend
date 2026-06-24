@@ -1,7 +1,11 @@
 package dev.ohs.player.configs;
 
 import ca.uhn.fhir.context.FhirContext;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import dev.ohs.player.auth.JwtTokenValidator;
+import dev.ohs.player.fhir.LocationHierarchy;
+import dev.ohs.player.fhir.LocationHierarchyService;
 import dev.ohs.player.fhir.LocationService;
 import dev.ohs.player.fhir.OrganizationService;
 import dev.ohs.player.fhir.PractitionerDetailService;
@@ -9,6 +13,7 @@ import dev.ohs.player.fhir.PractitionerRoleService;
 import dev.ohs.player.fhir.PractitionerService;
 import dev.ohs.player.iam.IamProviderService;
 import dev.ohs.player.iam.keycloak.KeycloakIamProvider;
+import java.time.Duration;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
@@ -24,6 +29,33 @@ public class OtherConfigs {
   @ConditionalOnMissingBean(FhirContext.class)
   public FhirContext fhirContext() {
     return FhirContext.forR4Cached();
+  }
+
+  @Bean
+  public Cache<String, LocationHierarchy> locationHierarchyCache(
+      @Value("${location-hierarchy.cache-ttl-seconds:86400}") long ttlSeconds,
+      @Value("${location-hierarchy.cache-max-total-nodes:100000}") long maxTotalCachedNodes) {
+    if (ttlSeconds <= 0) {
+      throw new IllegalArgumentException("Location hierarchy cache TTL must be greater than zero");
+    }
+    if (maxTotalCachedNodes <= 0) {
+      throw new IllegalArgumentException(
+          "Location hierarchy cache maximum node weight must be greater than zero");
+    }
+
+    return Caffeine.newBuilder()
+        .expireAfterWrite(Duration.ofSeconds(ttlSeconds))
+        .maximumWeight(maxTotalCachedNodes)
+        .weigher(
+            (String rootId, LocationHierarchy hierarchy) ->
+                Math.max(1, hierarchy.getMeta().getNodeCount()))
+        .build();
+  }
+
+  @Bean
+  public LocationHierarchyService locationHierarchyService(
+      Cache<String, LocationHierarchy> locationHierarchyCache) {
+    return new LocationHierarchyService(locationHierarchyCache);
   }
 
   @Value("${iam.provider.client-id:}")

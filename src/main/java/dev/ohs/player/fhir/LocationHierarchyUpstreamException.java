@@ -7,8 +7,8 @@ package dev.ohs.player.fhir;
  *
  * <p>Contract: the service must wrap any FHIR transport/server/parse error during descendant
  * traversal — including an unexpected child-search {@code 404} — in this exception. Only the
- * initial root read may surface a {@link ca.uhn.fhir.rest.server.exceptions.ResourceNotFoundException}
- * (mapped to 404).
+ * initial root read may surface a {@link
+ * ca.uhn.fhir.rest.server.exceptions.ResourceNotFoundException} (mapped to 404).
  */
 public class LocationHierarchyUpstreamException extends RuntimeException {
 

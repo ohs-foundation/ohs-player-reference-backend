@@ -23,7 +23,9 @@ public class LocationNode {
   private List<LocationNode> children = new ArrayList<>();
   private boolean hasMoreChildren;
 
-  /** Coalesces a null assignment to an empty list so {@code children} is never serialized as null. */
+  /**
+   * Coalesces a null assignment to an empty list so {@code children} is never serialized as null.
+   */
   public void setChildren(@Nullable List<LocationNode> children) {
     this.children = children != null ? children : new ArrayList<>();
   }

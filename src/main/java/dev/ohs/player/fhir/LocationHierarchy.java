@@ -4,7 +4,12 @@ import lombok.Getter;
 import lombok.Setter;
 import org.jspecify.annotations.NullUnmarked;
 
-/** Response DTO for a Location hierarchy rooted at a requested FHIR Location. */
+/**
+ * Response DTO for a Location hierarchy rooted at a requested FHIR Location.
+ *
+ * <p>Instances returned by {@link LocationHierarchyService} may be cached and shared across request
+ * threads. Callers must treat the hierarchy and all descendants as read-only.
+ */
 @NullUnmarked
 @Getter
 @Setter

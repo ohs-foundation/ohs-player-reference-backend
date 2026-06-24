@@ -10,7 +10,6 @@ import ca.uhn.fhir.rest.server.exceptions.ResourceNotFoundException;
 import dev.ohs.player.auth.AuthenticatedUser;
 import dev.ohs.player.auth.AuthorizationHandler;
 import dev.ohs.player.fhir.LocationHierarchy;
-import dev.ohs.player.fhir.LocationHierarchyCacheException;
 import dev.ohs.player.fhir.LocationHierarchyService;
 import dev.ohs.player.fhir.LocationHierarchyUpstreamException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -27,7 +26,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 @ExtendWith(MockitoExtension.class)
 class LocationHierarchyServletTest {
 
-  private static final String ROOT_ID = "location.root-1";
+  private static final String ROOT_ID = "3e39604c-57c9-44c4-863b-2e873e4ba613";
 
   @Mock private LocationHierarchyService locationHierarchyService;
   @Mock private HttpServletRequest request;
@@ -42,8 +41,7 @@ class LocationHierarchyServletTest {
     lenient()
         .when(request.getAttribute(AuthorizationHandler.AUTH_USER_ATTRIBUTE))
         .thenReturn(
-            new AuthenticatedUser(
-                "user-id", "test-user", Set.of("location-hierarchy.view")));
+            new AuthenticatedUser("user-id", "test-user", Set.of("location-hierarchy.view")));
   }
 
   @Test
@@ -113,21 +111,10 @@ class LocationHierarchyServletTest {
   }
 
   @Test
-  void doGet_CacheUnavailable_Returns503() throws Exception {
-    when(request.getPathInfo()).thenReturn("/" + ROOT_ID);
-    when(locationHierarchyService.getLocationHierarchy(ROOT_ID))
-        .thenThrow(new LocationHierarchyCacheException("Redis down"));
-
-    servlet.doGet(request, response);
-
-    verify(response).setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
-  }
-
-  @Test
   void doGet_UnexpectedError_Returns500() throws Exception {
     when(request.getPathInfo()).thenReturn("/" + ROOT_ID);
     when(locationHierarchyService.getLocationHierarchy(ROOT_ID))
-        .thenThrow(new RuntimeException("boom"));
+        .thenThrow(new RuntimeException("Unexpected Error"));
 
     servlet.doGet(request, response);
 

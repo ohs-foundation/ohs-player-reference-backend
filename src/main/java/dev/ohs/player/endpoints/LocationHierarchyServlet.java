@@ -4,7 +4,6 @@ import ca.uhn.fhir.rest.server.exceptions.ResourceNotFoundException;
 import dev.ohs.player.auth.AuthorizationHandler;
 import dev.ohs.player.auth.RoleLevel;
 import dev.ohs.player.fhir.LocationHierarchy;
-import dev.ohs.player.fhir.LocationHierarchyCacheException;
 import dev.ohs.player.fhir.LocationHierarchyService;
 import dev.ohs.player.fhir.LocationHierarchyUpstreamException;
 import jakarta.servlet.http.HttpServlet;
@@ -26,7 +25,8 @@ public class LocationHierarchyServlet extends HttpServlet {
   private final LocationHierarchyService locationHierarchyService;
 
   @Override
-  protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
+  protected void doGet(HttpServletRequest request, HttpServletResponse response)
+      throws IOException {
     if (!AuthorizationHandler.require(request, response, AUTH_RESOURCE, RoleLevel.VIEW)) return;
 
     String rootId = extractRootId(request.getPathInfo());
@@ -46,13 +46,6 @@ public class LocationHierarchyServlet extends HttpServlet {
       // LocationHierarchyUpstreamException.
       ServletResponseUtil.writeJsonError(
           response, HttpServletResponse.SC_NOT_FOUND, "Location root not found: " + rootId);
-      return;
-    } catch (LocationHierarchyCacheException e) {
-      logger.error("Cache unavailable while building Location hierarchy for root id: {}", rootId, e);
-      ServletResponseUtil.writeJsonError(
-          response,
-          HttpServletResponse.SC_SERVICE_UNAVAILABLE,
-          "Location hierarchy cache is temporarily unavailable");
       return;
     } catch (LocationHierarchyUpstreamException e) {
       logger.error("Upstream FHIR failure building Location hierarchy for root id: {}", rootId, e);
