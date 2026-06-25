@@ -5,6 +5,7 @@ import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import dev.ohs.player.auth.JwtTokenValidator;
 import dev.ohs.player.fhir.LocationHierarchy;
+import dev.ohs.player.fhir.LocationHierarchyConfig;
 import dev.ohs.player.fhir.LocationHierarchyService;
 import dev.ohs.player.fhir.LocationService;
 import dev.ohs.player.fhir.OrganizationService;
@@ -27,8 +28,24 @@ public class OtherConfigs {
 
   @Bean
   @ConditionalOnMissingBean(FhirContext.class)
-  public FhirContext fhirContext() {
-    return FhirContext.forR4Cached();
+  public FhirContext fhirContext(
+      @Value("${fhir.client.connect-timeout-ms:5000}") int connectTimeoutMs,
+      @Value("${fhir.client.read-timeout-ms:30000}") int readTimeoutMs) {
+    if (connectTimeoutMs <= 0) {
+      throw new IllegalArgumentException("FHIR client connect timeout must be greater than zero");
+    }
+    if (readTimeoutMs <= 0) {
+      throw new IllegalArgumentException("FHIR client read timeout must be greater than zero");
+    }
+
+    FhirContext fhirContext = FhirContext.forR4Cached();
+    fhirContext.getRestfulClientFactory().setConnectTimeout(connectTimeoutMs);
+    fhirContext.getRestfulClientFactory().setSocketTimeout(readTimeoutMs);
+    return fhirContext;
+  }
+
+  FhirContext fhirContext() {
+    return fhirContext(5_000, 30_000);
   }
 
   @Bean
@@ -54,8 +71,32 @@ public class OtherConfigs {
 
   @Bean
   public LocationHierarchyService locationHierarchyService(
-      Cache<String, LocationHierarchy> locationHierarchyCache) {
-    return new LocationHierarchyService(locationHierarchyCache);
+      Cache<String, LocationHierarchy> locationHierarchyCache,
+      FhirContext fhirContext,
+      LocationHierarchyConfig locationHierarchyConfig) {
+    String fhirServerUrl = System.getenv(PROXY_TO_ENV);
+    if (fhirServerUrl == null || fhirServerUrl.isBlank()) {
+      throw new IllegalStateException("PROXY_TO environment variable is not set");
+    }
+    return new LocationHierarchyService(
+        locationHierarchyCache, fhirContext, fhirServerUrl, locationHierarchyConfig);
+  }
+
+  @Bean
+  public LocationHierarchyConfig locationHierarchyConfig(
+      @Value("${location-hierarchy.max-part-of-batch-size:100}") int maxPartOfBatchSize,
+      @Value("${location-hierarchy.upstream-page-size:200}") int upstreamPageSize,
+      @Value("${location-hierarchy.max-depth:25}") int maxDepth,
+      @Value("${location-hierarchy.max-nodes:10000}") int maxNodes,
+      @Value("${location-hierarchy.max-fetched-entries:50000}") int maxFetchedEntries,
+      @Value("${location-hierarchy.max-build-duration-seconds:120}") long maxBuildDurationSeconds) {
+    return new LocationHierarchyConfig(
+        maxPartOfBatchSize,
+        upstreamPageSize,
+        maxDepth,
+        maxNodes,
+        maxFetchedEntries,
+        Duration.ofSeconds(maxBuildDurationSeconds));
   }
 
   @Value("${iam.provider.client-id:}")
