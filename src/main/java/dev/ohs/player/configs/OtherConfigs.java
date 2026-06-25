@@ -87,16 +87,8 @@ public class OtherConfigs {
       @Value("${location-hierarchy.max-part-of-batch-size:100}") int maxPartOfBatchSize,
       @Value("${location-hierarchy.upstream-page-size:200}") int upstreamPageSize,
       @Value("${location-hierarchy.max-depth:25}") int maxDepth,
-      @Value("${location-hierarchy.max-nodes:10000}") int maxNodes,
-      @Value("${location-hierarchy.max-fetched-entries:50000}") int maxFetchedEntries,
-      @Value("${location-hierarchy.max-build-duration-seconds:120}") long maxBuildDurationSeconds) {
-    return new LocationHierarchyConfig(
-        maxPartOfBatchSize,
-        upstreamPageSize,
-        maxDepth,
-        maxNodes,
-        maxFetchedEntries,
-        Duration.ofSeconds(maxBuildDurationSeconds));
+      @Value("${location-hierarchy.max-nodes:10000}") int maxNodes) {
+    return new LocationHierarchyConfig(maxPartOfBatchSize, upstreamPageSize, maxDepth, maxNodes);
   }
 
   @Value("${iam.provider.client-id:}")

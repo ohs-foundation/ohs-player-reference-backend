@@ -17,11 +17,6 @@ location-hierarchy.max-depth=25
 # Maximum number of Location nodes returned in one hierarchy response, including the root
 location-hierarchy.max-nodes=10000
 
-# Maximum number of upstream Location entries read while building one hierarchy response
-location-hierarchy.max-fetched-entries=50000
-# Maximum total time allowed to build a hierarchy from upstream FHIR before failing the request
-location-hierarchy.max-build-duration-seconds=120
-
 # Time a built hierarchy can remain in this JVM's cache before it must be rebuilt
 location-hierarchy.cache-ttl-seconds=86400
 # Maximum total cached Location nodes across all hierarchy responses in this JVM

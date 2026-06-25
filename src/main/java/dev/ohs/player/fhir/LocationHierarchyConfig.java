@@ -1,24 +1,15 @@
 package dev.ohs.player.fhir;
 
-import java.time.Duration;
-
-/** Immutable traversal and build-safety configuration for {@link LocationHierarchyService}. */
+/** Immutable traversal configuration for {@link LocationHierarchyService}. */
 public final class LocationHierarchyConfig {
 
   private final int maxPartOfBatchSize;
   private final int upstreamPageSize;
   private final int maxDepth;
   private final int maxNodes;
-  private final int maxFetchedEntries;
-  private final Duration maxBuildDuration;
 
   public LocationHierarchyConfig(
-      int maxPartOfBatchSize,
-      int upstreamPageSize,
-      int maxDepth,
-      int maxNodes,
-      int maxFetchedEntries,
-      Duration maxBuildDuration) {
+      int maxPartOfBatchSize, int upstreamPageSize, int maxDepth, int maxNodes) {
     if (maxPartOfBatchSize <= 0) {
       throw new IllegalArgumentException("maxPartOfBatchSize must be greater than zero");
     }
@@ -31,19 +22,11 @@ public final class LocationHierarchyConfig {
     if (maxNodes <= 0) {
       throw new IllegalArgumentException("maxNodes must be greater than zero");
     }
-    if (maxFetchedEntries < maxNodes) {
-      throw new IllegalArgumentException("maxFetchedEntries must be at least maxNodes");
-    }
-    if (maxBuildDuration == null || maxBuildDuration.isZero() || maxBuildDuration.isNegative()) {
-      throw new IllegalArgumentException("maxBuildDuration must be greater than zero");
-    }
 
     this.maxPartOfBatchSize = maxPartOfBatchSize;
     this.upstreamPageSize = upstreamPageSize;
     this.maxDepth = maxDepth;
     this.maxNodes = maxNodes;
-    this.maxFetchedEntries = maxFetchedEntries;
-    this.maxBuildDuration = maxBuildDuration;
   }
 
   public int getMaxPartOfBatchSize() {
@@ -60,13 +43,5 @@ public final class LocationHierarchyConfig {
 
   public int getMaxNodes() {
     return maxNodes;
-  }
-
-  public int getMaxFetchedEntries() {
-    return maxFetchedEntries;
-  }
-
-  public Duration getMaxBuildDuration() {
-    return maxBuildDuration;
   }
 }
