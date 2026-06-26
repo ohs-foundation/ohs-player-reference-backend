@@ -51,6 +51,8 @@ The plugin does not bundle FHIR Gateway classes — they are declared `provided`
 
 ## Configuration
 
+### Environment variables
+
 | Variable | Source | Description |
 | --- | --- | --- |
 | `PROXY_TO` | env var | FHIR server base URL |
@@ -58,6 +60,17 @@ The plugin does not bundle FHIR Gateway classes — they are declared `provided`
 | `TOKEN_ISSUER` | env var | *(Keycloak)* Issuer URL, e.g. `http://keycloak:8080/realms/my-realm`. Server URL and realm are parsed from this. |
 | `IAM_PROVIDER_CLIENT_ID` | env var or `iam.provider.client-id` in `application.properties` | *(Keycloak)* Admin client ID |
 | `IAM_PROVIDER_CLIENT_SECRET` | env var or `iam.provider.client-secret` in `application.properties` | *(Keycloak)* Admin client secret |
+
+### Application properties
+
+| Property | Default | Description |
+| --- | --- | --- |
+| `location-hierarchy.max-part-of-batch-size` | `100` | Number of parent Location ids to search for in one `Location.partOf` request. |
+| `location-hierarchy.upstream-page-size` | `200` | Number of child Locations to ask the FHIR server for per page. |
+| `location-hierarchy.max-depth` | `25` | Deepest child level to return below the requested root. `0` returns only the root. |
+| `location-hierarchy.max-nodes` | `10000` | Maximum number of Location nodes to return in one response, including the root. |
+| `location-hierarchy.cache-ttl-seconds` | `86400` | How long to keep a successful hierarchy response in the local Caffeine cache. |
+| `location-hierarchy.cache-max-total-nodes` | `100000` | Approximate maximum number of Location nodes held across all cached hierarchy responses in one JVM. |
 
 ### IAM providers
 
@@ -173,6 +186,60 @@ The `email` field is always synced to `Practitioner.telecom` with `system=email`
   ]
 }
 ```
+
+## Location Hierarchy API
+
+| Method | Endpoint | Required role | Description |
+| --- | --- | --- | --- |
+| `GET` | `/api/location-hierarchy/{rootId}` | `location-hierarchy.view` | Return the `Location.partOf` tree starting from the requested FHIR Location id. |
+
+The caller must be authenticated by the `/api/*` JWT filter and must have the `location-hierarchy.view` role. Authorization is checked before validating the path or reading from the cache/FHIR server.
+
+`rootId` must be a valid FHIR id: 1–64 characters using only letters, numbers, `-`, or `.`. The values `.` and `..` are rejected.
+
+**Response:**
+
+```json
+{
+  "root": {
+    "id": "root-location-id",
+    "name": "Root Location",
+    "partOf": null,
+    "hasMoreChildren": false,
+    "children": [
+      {
+        "id": "child-location-id",
+        "name": "Child Location",
+        "partOf": "root-location-id",
+        "hasMoreChildren": false,
+        "children": []
+      }
+    ]
+  },
+  "meta": {
+    "nodeCount": 2,
+    "depth": 1,
+    "truncated": false,
+    "builtAt": "2026-06-26T12:00:00Z"
+  }
+}
+```
+
+The service builds the tree one level at a time. It starts with the root, fetches its children, then fetches the next level of children, and continues until it reaches `max-depth`, `max-nodes`, or the end of the tree. Results are ordered consistently so the same stored hierarchy returns the same response order.
+
+`max-depth` controls how many child levels can be returned. `max-nodes` controls how many Locations can be returned in one response, including the root. If the response limit is reached, the service stops at a clean parent boundary instead of returning only some children for the same parent. Nodes that may still have children are marked with `hasMoreChildren=true`. When `hasMoreChildren=false`, the returned child list for that node is complete.
+
+Successful responses are cached in-process with Caffeine. The default TTL is one day, so the endpoint accepts up to one day of Location hierarchy staleness. The cache is local to each backend JVM; each replica can build the same root independently after startup or expiry. Shared Redis caching and distributed miss coordination are planned for v2.
+
+| Status | Meaning |
+| --- | --- |
+| `200` | Hierarchy returned successfully. |
+| `400` | Missing or malformed `{rootId}` path segment. |
+| `401` | Missing or invalid authentication. |
+| `403` | Authenticated caller lacks `location-hierarchy.view`. |
+| `404` | Requested root Location was not found. |
+| `500` | Unexpected backend failure. |
+| `502` | Upstream FHIR server failure while building the hierarchy. |
 
 ## Bulk Import API
 
