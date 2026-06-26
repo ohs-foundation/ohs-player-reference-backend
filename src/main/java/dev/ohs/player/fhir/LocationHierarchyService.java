@@ -80,6 +80,11 @@ public class LocationHierarchyService {
 
   private LocationHierarchy loadOnCacheMiss(String rootId) {
     LocationHierarchy hierarchy = buildHierarchy(rootId);
+    validateCacheAdmission(hierarchy);
+    return hierarchy;
+  }
+
+  private void validateCacheAdmission(LocationHierarchy hierarchy) {
     if (hierarchy == null) {
       throw new IllegalStateException("Built Location hierarchy cannot be null");
     }
@@ -96,7 +101,6 @@ public class LocationHierarchyService {
     if (hierarchy.getMeta().getBuiltAt() == null) {
       throw new IllegalStateException("Built Location hierarchy metadata must include builtAt");
     }
-    return hierarchy;
   }
 
   private IGenericClient newClient() {

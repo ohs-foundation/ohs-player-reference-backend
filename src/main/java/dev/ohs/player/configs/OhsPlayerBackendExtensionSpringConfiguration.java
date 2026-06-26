@@ -10,9 +10,11 @@ import dev.ohs.player.bulk.BulkUserImportServlet;
 import dev.ohs.player.bulk.CsvProcessor;
 import dev.ohs.player.bulk.SseResponseHelper;
 import dev.ohs.player.endpoints.GroupManagementServlet;
+import dev.ohs.player.endpoints.LocationHierarchyServlet;
 import dev.ohs.player.endpoints.PractitionerDetailsServlet;
 import dev.ohs.player.endpoints.RolesServlet;
 import dev.ohs.player.endpoints.UserManagementServlet;
+import dev.ohs.player.fhir.LocationHierarchyService;
 import dev.ohs.player.fhir.LocationService;
 import dev.ohs.player.fhir.OrganizationService;
 import dev.ohs.player.fhir.PractitionerDetailService;
@@ -53,6 +55,8 @@ public class OhsPlayerBackendExtensionSpringConfiguration {
 
   @Autowired LocationService locationService;
 
+  @Autowired LocationHierarchyService locationHierarchyService;
+
   @Autowired PractitionerRoleService practitionerRoleService;
 
   @Autowired JwtTokenValidator jwtTokenValidator;
@@ -88,6 +92,12 @@ public class OhsPlayerBackendExtensionSpringConfiguration {
     return new ServletRegistrationBean<>(
         new PractitionerDetailsServlet(practitionerDetailService, fhirContext),
         "/api/practitioner-details");
+  }
+
+  @Bean
+  public ServletRegistrationBean<LocationHierarchyServlet> locationHierarchyServlet() {
+    return new ServletRegistrationBean<>(
+        new LocationHierarchyServlet(locationHierarchyService), "/api/location-hierarchy/*");
   }
 
   @Bean
