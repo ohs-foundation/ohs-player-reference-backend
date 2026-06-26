@@ -17,11 +17,19 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import org.hl7.fhir.instance.model.api.IIdType;
 import org.hl7.fhir.r4.model.Bundle;
+import org.hl7.fhir.r4.model.IdType;
 import org.hl7.fhir.r4.model.Location;
+import org.hl7.fhir.r4.model.OperationOutcome;
 import org.hl7.fhir.r4.model.Reference;
+import org.hl7.fhir.r4.model.Resource;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class LocationHierarchyService {
+
+  private static final Logger logger = LoggerFactory.getLogger(LocationHierarchyService.class);
 
   private final Cache<String, LocationHierarchy> cache;
   private final FhirContext fhirContext;
@@ -101,16 +109,78 @@ public class LocationHierarchyService {
     LocationNode rootNode = mapLocation(rootLocation);
     rootNode.setPartOf(null);
 
+    Set<String> emittedIds = new HashSet<>();
+    emittedIds.add(normalizeLocationReference(rootNode.getId()));
+
+    int nodeCount = 1;
+    int deepestDepth = 0;
+    boolean truncated = false;
+    List<LocationNode> currentLevel = List.of(rootNode);
+
+    for (int currentDepth = 0; !currentLevel.isEmpty(); currentDepth++) {
+      if (currentDepth >= config.getMaxDepth() || nodeCount >= config.getMaxNodes()) {
+        markHasMoreChildren(currentLevel);
+        truncated = true;
+        break;
+      }
+
+      List<LocationNode> nextLevel = new ArrayList<>();
+      boolean stopTraversal = false;
+
+      for (int batchStart = 0;
+          batchStart < currentLevel.size() && !stopTraversal;
+          batchStart += config.getMaxPartOfBatchSize()) {
+        int batchEnd = Math.min(batchStart + config.getMaxPartOfBatchSize(), currentLevel.size());
+        List<LocationNode> parentBatch = currentLevel.subList(batchStart, batchEnd);
+        Map<String, List<LocationNode>> childrenByParent =
+            fetchChildrenForBatch(client, parentBatch, emittedIds);
+
+        for (int parentIndex = batchStart; parentIndex < batchEnd; parentIndex++) {
+          LocationNode parent = currentLevel.get(parentIndex);
+          String parentId = normalizeLocationReference(parent.getId());
+          List<LocationNode> children = childrenByParent.getOrDefault(parentId, List.of());
+          if (children.isEmpty()) {
+            continue;
+          }
+
+          if (nodeCount + children.size() > config.getMaxNodes()) {
+            parent.setHasMoreChildren(true);
+            markHasMoreChildren(currentLevel.subList(parentIndex + 1, currentLevel.size()));
+            markHasMoreChildren(nextLevel);
+            truncated = true;
+            stopTraversal = true;
+            break;
+          }
+
+          parent.getChildren().addAll(children);
+          for (LocationNode child : children) {
+            emittedIds.add(normalizeLocationReference(child.getId()));
+          }
+          nextLevel.addAll(children);
+          nodeCount += children.size();
+          deepestDepth = currentDepth + 1;
+        }
+      }
+
+      currentLevel = nextLevel;
+    }
+
     LocationHierarchyMeta meta = new LocationHierarchyMeta();
-    meta.setNodeCount(1);
-    meta.setDepth(0);
-    meta.setTruncated(false);
+    meta.setNodeCount(nodeCount);
+    meta.setDepth(deepestDepth);
+    meta.setTruncated(truncated);
     meta.setBuiltAt(Instant.now());
 
     LocationHierarchy hierarchy = new LocationHierarchy();
     hierarchy.setRoot(rootNode);
     hierarchy.setMeta(meta);
     return hierarchy;
+  }
+
+  private void markHasMoreChildren(List<LocationNode> nodes) {
+    for (LocationNode node : nodes) {
+      node.setHasMoreChildren(true);
+    }
   }
 
   private Location readRoot(IGenericClient client, String rootId) {
@@ -126,19 +196,24 @@ public class LocationHierarchyService {
     }
   }
 
+  // Per-level Location.partOf search
   Map<String, List<LocationNode>> fetchChildrenForBatch(
       IGenericClient client, List<LocationNode> parents, Set<String> emittedIds) {
-    if (parents == null || parents.isEmpty()) {
+    Objects.requireNonNull(parents, "parents cannot be null");
+    if (parents.isEmpty()) {
       return Collections.emptyMap();
     }
 
     List<String> parentIds = parentLogicalIds(parents);
+    Set<String> parentIdSet = new HashSet<>(parentIds);
     Map<String, List<LocationNode>> childrenByParent = new HashMap<>();
+    Map<String, String> parentByChildId = new HashMap<>(); // For dedup
     Set<String> visitedNextUrls = new HashSet<>();
 
-    for (Bundle page = executeChildSearch(client, parentIds); page != null; ) {
+    Bundle page = executeChildSearch(client, parentIds);
+    while (true) {
       validateSearchBundle(page);
-      processChildSearchPage(page, childrenByParent, emittedIds);
+      processChildSearchPage(page, parentIdSet, childrenByParent, parentByChildId, emittedIds);
 
       Bundle.BundleLinkComponent nextLink = page.getLink("next");
       if (nextLink == null) {
@@ -206,9 +281,130 @@ public class LocationHierarchyService {
   }
 
   private void processChildSearchPage(
-      Bundle page, Map<String, List<LocationNode>> childrenByParent, Set<String> emittedIds) {
-    // Task 5 owns search-entry validation and hierarchy edge processing. Task 4 only drains and
-    // validates the search pages.
+      Bundle page,
+      Set<String> parentIds,
+      Map<String, List<LocationNode>> childrenByParent,
+      Map<String, String> parentByChildId,
+      Set<String> emittedIds) {
+    for (Bundle.BundleEntryComponent entry : page.getEntry()) {
+      Resource resource = entry.getResource();
+      if (resource == null) {
+        throw new LocationHierarchyUpstreamException(
+            "FHIR child search returned a missing resource");
+      }
+
+      Bundle.SearchEntryMode entryMode = entry.getSearch().getMode();
+      if (resource instanceof OperationOutcome) {
+        handleOutcomeEntry((OperationOutcome) resource, entryMode);
+        continue;
+      }
+      if (entryMode == Bundle.SearchEntryMode.OUTCOME) {
+        throw new LocationHierarchyUpstreamException(
+            "FHIR child search returned a non-OperationOutcome outcome entry");
+      }
+      if (!(resource instanceof Location)) {
+        throw new LocationHierarchyUpstreamException(
+            "FHIR child search returned a non-Location resource: " + resource.fhirType());
+      }
+
+      processChildLocation(
+          (Location) resource, parentIds, childrenByParent, parentByChildId, emittedIds);
+    }
+  }
+
+  private void handleOutcomeEntry(OperationOutcome outcome, Bundle.SearchEntryMode entryMode) {
+    if (entryMode != Bundle.SearchEntryMode.OUTCOME) {
+      throw new LocationHierarchyUpstreamException(
+          "FHIR child search returned OperationOutcome as a match/include entry");
+    }
+
+    for (OperationOutcome.OperationOutcomeIssueComponent issue : outcome.getIssue()) {
+      OperationOutcome.IssueSeverity severity = issue.getSeverity();
+      if (severity == OperationOutcome.IssueSeverity.FATAL
+          || severity == OperationOutcome.IssueSeverity.ERROR) {
+        throw new LocationHierarchyUpstreamException(
+            "FHIR child search returned an error OperationOutcome");
+      }
+    }
+
+    logger.warn("Ignoring non-error OperationOutcome returned by FHIR child search");
+  }
+
+  private void processChildLocation(
+      Location location,
+      Set<String> parentIds,
+      Map<String, List<LocationNode>> childrenByParent,
+      Map<String, String> parentByChildId,
+      Set<String> emittedIds) {
+    String childId = normalizeLocationIdForEdge(location);
+    if (childId == null) {
+      logSkippedEdge(null, null, "missing child id");
+      return;
+    }
+
+    String parentId = normalizeParentIdForEdge(location.getPartOf());
+    if (parentId == null) {
+      logSkippedEdge(childId, null, "missing or malformed parent reference");
+      return;
+    }
+    if (!parentIds.contains(parentId)) {
+      logSkippedEdge(childId, parentId, "parent outside current batch");
+      return;
+    }
+    if (childId.equals(parentId)) {
+      logSkippedEdge(childId, parentId, "self-parent edge");
+      return;
+    }
+    if (emittedIds.contains(childId)) {
+      logSkippedEdge(childId, parentId, "child already emitted");
+      return;
+    }
+
+    String previousParentId = parentByChildId.putIfAbsent(childId, parentId);
+    if (previousParentId != null) {
+      if (!previousParentId.equals(parentId)) {
+        throw new LocationHierarchyUpstreamException(
+            "FHIR child search returned conflicting parents for Location/" + childId);
+      }
+      return;
+    }
+
+    childrenByParent
+        .computeIfAbsent(parentId, childParentId -> new ArrayList<>())
+        .add(mapLocation(location, canonicalLocationReference(parentId)));
+  }
+
+  private String normalizeLocationIdForEdge(Location location) {
+    try {
+      return normalizeLocationId(location);
+    } catch (LocationHierarchyUpstreamException e) {
+      return null;
+    }
+  }
+
+  private String normalizeParentIdForEdge(Reference partOf) {
+    if (partOf == null || partOf.isEmpty()) {
+      return null;
+    }
+
+    IIdType parentReference = partOf.getReferenceElement();
+    if (parentReference == null || parentReference.isEmpty() || parentReference.isLocal()) {
+      return null;
+    }
+    if (!"Location".equals(parentReference.getResourceType())) {
+      return null;
+    }
+
+    String parentId = parentReference.toUnqualifiedVersionless().getIdPart();
+    return parentId == null || parentId.isBlank() ? null : parentId;
+  }
+
+  private void logSkippedEdge(String childId, String parentId, String reason) {
+    logger.warn(
+        "Skipping Location hierarchy edge: childId={}, parentId={}, reason={}",
+        childId,
+        parentId,
+        reason);
   }
 
   private List<String> parentLogicalIds(List<LocationNode> parents) {
@@ -217,24 +413,31 @@ public class LocationHierarchyService {
       String parentId = normalizeLocationReference(parent.getId());
       parentIds.add(parentId);
     }
+    // The FHIR search is semantically order-independent, but sorting keeps the generated batched
+    // request stable across JVM collection iteration order, which makes behavior easier to test,
+    // log, compare, and troubleshoot.
     Collections.sort(parentIds);
     return parentIds;
   }
 
   LocationNode mapLocation(Location location) {
+    return mapLocation(location, normalizePartOf(location.getPartOf()));
+  }
+
+  private LocationNode mapLocation(Location location, String canonicalPartOf) {
     String logicalId = normalizeLocationId(location);
 
     LocationNode node = new LocationNode();
     node.setId(canonicalLocationReference(logicalId));
     node.setName(location.hasName() ? location.getName() : null);
-    node.setPartOf(normalizePartOf(location.getPartOf()));
+    node.setPartOf(canonicalPartOf);
     return node;
   }
 
   private String normalizeLocationId(Location location) {
     String logicalId = location.getIdElement().toUnqualifiedVersionless().getIdPart();
     if (logicalId == null || logicalId.isBlank()) {
-      throw new LocationHierarchyUpstreamException("Root Location is missing a logical id");
+      throw new LocationHierarchyUpstreamException("Location is missing a logical id");
     }
     return logicalId;
   }
@@ -252,8 +455,7 @@ public class LocationHierarchyService {
   }
 
   private String normalizeLocationReference(String reference) {
-    String logicalId =
-        new org.hl7.fhir.r4.model.IdType(reference).toUnqualifiedVersionless().getIdPart();
+    String logicalId = new IdType(reference).toUnqualifiedVersionless().getIdPart();
     if (logicalId == null || logicalId.isBlank()) {
       throw new LocationHierarchyUpstreamException("Location reference is missing a logical id");
     }
