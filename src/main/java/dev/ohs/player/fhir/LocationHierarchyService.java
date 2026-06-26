@@ -11,6 +11,7 @@ import com.github.benmanes.caffeine.cache.Cache;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -110,8 +111,7 @@ public class LocationHierarchyService {
   LocationHierarchy buildHierarchy(String rootId) {
     IGenericClient client = newClient();
     Location rootLocation = readRoot(client, rootId);
-    LocationNode rootNode = mapLocation(rootLocation);
-    rootNode.setPartOf(null);
+    LocationNode rootNode = mapLocation(rootLocation, null);
 
     Set<String> emittedIds = new HashSet<>();
     emittedIds.add(normalizeLocationReference(rootNode.getId()));
@@ -119,9 +119,10 @@ public class LocationHierarchyService {
     int nodeCount = 1;
     int deepestDepth = 0;
     boolean truncated = false;
-    List<LocationNode> currentLevel = List.of(rootNode);
+    List<LocationNode> currentLevel = new ArrayList<>(List.of(rootNode));
 
     for (int currentDepth = 0; !currentLevel.isEmpty(); currentDepth++) {
+      sortNodesById(currentLevel);
       if (currentDepth >= config.getMaxDepth() || nodeCount >= config.getMaxNodes()) {
         markHasMoreChildren(currentLevel);
         truncated = true;
@@ -166,6 +167,9 @@ public class LocationHierarchyService {
         }
       }
 
+      if (stopTraversal) {
+        break;
+      }
       currentLevel = nextLevel;
     }
 
@@ -236,6 +240,9 @@ public class LocationHierarchyService {
 
       page = fetchNextPage(client, page);
     }
+    for (List<LocationNode> children : childrenByParent.values()) {
+      sortNodesById(children);
+    }
     return childrenByParent;
   }
 
@@ -305,6 +312,10 @@ public class LocationHierarchyService {
       if (entryMode == Bundle.SearchEntryMode.OUTCOME) {
         throw new LocationHierarchyUpstreamException(
             "FHIR child search returned a non-OperationOutcome outcome entry");
+      }
+      if (entryMode == Bundle.SearchEntryMode.INCLUDE) {
+        throw new LocationHierarchyUpstreamException(
+            "FHIR child search returned an include Location entry");
       }
       if (!(resource instanceof Location)) {
         throw new LocationHierarchyUpstreamException(
@@ -411,6 +422,12 @@ public class LocationHierarchyService {
         reason);
   }
 
+  private void sortNodesById(List<LocationNode> nodes) {
+    if (nodes.size() > 1) {
+      nodes.sort(Comparator.comparing(LocationNode::getId));
+    }
+  }
+
   private List<String> parentLogicalIds(List<LocationNode> parents) {
     List<String> parentIds = new ArrayList<>(parents.size());
     for (LocationNode parent : parents) {
@@ -422,10 +439,6 @@ public class LocationHierarchyService {
     // log, compare, and troubleshoot.
     Collections.sort(parentIds);
     return parentIds;
-  }
-
-  LocationNode mapLocation(Location location) {
-    return mapLocation(location, normalizePartOf(location.getPartOf()));
   }
 
   private LocationNode mapLocation(Location location, String canonicalPartOf) {
@@ -444,18 +457,6 @@ public class LocationHierarchyService {
       throw new LocationHierarchyUpstreamException("Location is missing a logical id");
     }
     return logicalId;
-  }
-
-  private String normalizePartOf(Reference partOf) {
-    if (partOf == null || partOf.isEmpty()) {
-      return null;
-    }
-
-    String parentId = partOf.getReferenceElement().toUnqualifiedVersionless().getIdPart();
-    if (parentId == null || parentId.isBlank()) {
-      throw new LocationHierarchyUpstreamException("Location.partOf is missing a logical id");
-    }
-    return canonicalLocationReference(parentId);
   }
 
   private String normalizeLocationReference(String reference) {
