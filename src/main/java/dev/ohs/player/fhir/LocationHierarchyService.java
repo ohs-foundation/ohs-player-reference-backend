@@ -110,7 +110,7 @@ public class LocationHierarchyService {
 
   LocationHierarchy buildHierarchy(String rootId) {
     IGenericClient client = newClient();
-    Location rootLocation = readRoot(client, rootId);
+    Location rootLocation = readRootLocation(client, rootId);
     LocationNode rootNode = mapLocation(rootLocation, null);
 
     Set<String> emittedIds = new HashSet<>();
@@ -191,7 +191,7 @@ public class LocationHierarchyService {
     }
   }
 
-  private Location readRoot(IGenericClient client, String rootId) {
+  private Location readRootLocation(IGenericClient client, String rootId) {
     try {
       return client.read().resource(Location.class).withId(rootId).execute();
     } catch (ResourceNotFoundException e) {
@@ -212,16 +212,17 @@ public class LocationHierarchyService {
       return Collections.emptyMap();
     }
 
-    List<String> parentIds = parentLogicalIds(parents);
+    List<String> parentIds = sortedParentLogicalIds(parents);
     Set<String> parentIdSet = new HashSet<>(parentIds);
     Map<String, List<LocationNode>> childrenByParent = new HashMap<>();
-    Map<String, String> parentByChildId = new HashMap<>(); // For dedup
+    Map<String, String> parentByChildId = new HashMap<>(); // Tracks the first parent per child.
     Set<String> visitedNextUrls = new HashSet<>();
 
-    Bundle page = executeChildSearch(client, parentIds);
+    Bundle page = searchChildrenForParentIds(client, parentIds);
     while (true) {
       validateSearchBundle(page);
-      processChildSearchPage(page, parentIdSet, childrenByParent, parentByChildId, emittedIds);
+      collectChildrenFromSearchPage(
+          page, parentIdSet, childrenByParent, parentByChildId, emittedIds);
 
       Bundle.BundleLinkComponent nextLink = page.getLink("next");
       if (nextLink == null) {
@@ -246,7 +247,7 @@ public class LocationHierarchyService {
     return childrenByParent;
   }
 
-  private Bundle executeChildSearch(IGenericClient client, List<String> parentIds) {
+  private Bundle searchChildrenForParentIds(IGenericClient client, List<String> parentIds) {
     try {
       return client
           .search()
@@ -291,7 +292,7 @@ public class LocationHierarchyService {
     }
   }
 
-  private void processChildSearchPage(
+  private void collectChildrenFromSearchPage(
       Bundle page,
       Set<String> parentIds,
       Map<String, List<LocationNode>> childrenByParent,
@@ -428,7 +429,7 @@ public class LocationHierarchyService {
     }
   }
 
-  private List<String> parentLogicalIds(List<LocationNode> parents) {
+  private List<String> sortedParentLogicalIds(List<LocationNode> parents) {
     List<String> parentIds = new ArrayList<>(parents.size());
     for (LocationNode parent : parents) {
       String parentId = normalizeLocationReference(parent.getId());

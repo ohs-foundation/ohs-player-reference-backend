@@ -17,9 +17,13 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.util.Set;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -88,46 +92,30 @@ class LocationHierarchyServletTest {
     verify(response).setStatus(HttpServletResponse.SC_OK);
   }
 
-  @Test
-  void doGet_MissingRoot_Returns404() throws Exception {
+  @ParameterizedTest
+  @MethodSource("serviceOutcomes")
+  void doGet_MapsServiceFailuresToHttpStatus(RuntimeException failure, int status)
+      throws Exception {
     when(request.getPathInfo()).thenReturn("/" + ROOT_ID);
-    when(locationHierarchyService.getLocationHierarchy(ROOT_ID))
-        .thenThrow(new ResourceNotFoundException("not found"));
+    if (failure == null) {
+      when(locationHierarchyService.getLocationHierarchy(ROOT_ID)).thenReturn(null);
+    } else {
+      when(locationHierarchyService.getLocationHierarchy(ROOT_ID)).thenThrow(failure);
+    }
 
     servlet.doGet(request, response);
 
-    verify(response).setStatus(HttpServletResponse.SC_NOT_FOUND);
+    verify(response).setStatus(status);
   }
 
-  @Test
-  void doGet_UpstreamFailure_Returns502() throws Exception {
-    when(request.getPathInfo()).thenReturn("/" + ROOT_ID);
-    when(locationHierarchyService.getLocationHierarchy(ROOT_ID))
-        .thenThrow(new LocationHierarchyUpstreamException("FHIR unavailable"));
-
-    servlet.doGet(request, response);
-
-    verify(response).setStatus(HttpServletResponse.SC_BAD_GATEWAY);
-  }
-
-  @Test
-  void doGet_UnexpectedError_Returns500() throws Exception {
-    when(request.getPathInfo()).thenReturn("/" + ROOT_ID);
-    when(locationHierarchyService.getLocationHierarchy(ROOT_ID))
-        .thenThrow(new RuntimeException("Unexpected Error"));
-
-    servlet.doGet(request, response);
-
-    verify(response).setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
-  }
-
-  @Test
-  void doGet_ServiceReturnsNull_Returns500() throws Exception {
-    when(request.getPathInfo()).thenReturn("/" + ROOT_ID);
-    when(locationHierarchyService.getLocationHierarchy(ROOT_ID)).thenReturn(null);
-
-    servlet.doGet(request, response);
-
-    verify(response).setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+  static Stream<Arguments> serviceOutcomes() {
+    return Stream.of(
+        Arguments.of(new ResourceNotFoundException("not found"), HttpServletResponse.SC_NOT_FOUND),
+        Arguments.of(
+            new LocationHierarchyUpstreamException("FHIR unavailable"),
+            HttpServletResponse.SC_BAD_GATEWAY),
+        Arguments.of(
+            new RuntimeException("Unexpected Error"), HttpServletResponse.SC_INTERNAL_SERVER_ERROR),
+        Arguments.of(null, HttpServletResponse.SC_INTERNAL_SERVER_ERROR));
   }
 }
