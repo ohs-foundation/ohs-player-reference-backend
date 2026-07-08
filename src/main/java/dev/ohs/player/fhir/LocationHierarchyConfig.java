@@ -1,6 +1,9 @@
 package dev.ohs.player.fhir;
 
+import lombok.Getter;
+
 /** Immutable traversal configuration for {@link LocationHierarchyService}. */
+@Getter
 public final class LocationHierarchyConfig {
 
   private final int maxPartOfBatchSize;
@@ -27,21 +30,5 @@ public final class LocationHierarchyConfig {
     this.upstreamPageSize = upstreamPageSize;
     this.maxDepth = maxDepth;
     this.maxNodes = maxNodes;
-  }
-
-  public int getMaxPartOfBatchSize() {
-    return maxPartOfBatchSize;
-  }
-
-  public int getUpstreamPageSize() {
-    return upstreamPageSize;
-  }
-
-  public int getMaxDepth() {
-    return maxDepth;
-  }
-
-  public int getMaxNodes() {
-    return maxNodes;
   }
 }

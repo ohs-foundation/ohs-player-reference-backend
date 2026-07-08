@@ -20,6 +20,8 @@ import java.util.Objects;
 import java.util.Set;
 import org.hl7.fhir.instance.model.api.IIdType;
 import org.hl7.fhir.r4.model.Bundle;
+import org.hl7.fhir.r4.model.CodeableConcept;
+import org.hl7.fhir.r4.model.Coding;
 import org.hl7.fhir.r4.model.IdType;
 import org.hl7.fhir.r4.model.Location;
 import org.hl7.fhir.r4.model.OperationOutcome;
@@ -111,7 +113,7 @@ public class LocationHierarchyService {
   LocationHierarchy buildHierarchy(String rootId) {
     IGenericClient client = newClient();
     Location rootLocation = readRootLocation(client, rootId);
-    LocationNode rootNode = mapLocation(rootLocation, null);
+    LocationNode rootNode = mapLocation(rootLocation, null, null);
 
     Set<String> emittedIds = new HashSet<>();
     emittedIds.add(normalizeLocationReference(rootNode.getId()));
@@ -214,6 +216,7 @@ public class LocationHierarchyService {
 
     List<String> parentIds = sortedParentLogicalIds(parents);
     Set<String> parentIdSet = new HashSet<>(parentIds);
+    Map<String, String> parentDisplayById = parentDisplayById(parents);
     Map<String, List<LocationNode>> childrenByParent = new HashMap<>();
     Map<String, String> parentByChildId = new HashMap<>(); // Tracks the first parent per child.
     Set<String> visitedNextUrls = new HashSet<>();
@@ -222,7 +225,7 @@ public class LocationHierarchyService {
     while (true) {
       validateSearchBundle(page);
       collectChildrenFromSearchPage(
-          page, parentIdSet, childrenByParent, parentByChildId, emittedIds);
+          page, parentIdSet, parentDisplayById, childrenByParent, parentByChildId, emittedIds);
 
       Bundle.BundleLinkComponent nextLink = page.getLink("next");
       if (nextLink == null) {
@@ -295,6 +298,7 @@ public class LocationHierarchyService {
   private void collectChildrenFromSearchPage(
       Bundle page,
       Set<String> parentIds,
+      Map<String, String> parentDisplayById,
       Map<String, List<LocationNode>> childrenByParent,
       Map<String, String> parentByChildId,
       Set<String> emittedIds) {
@@ -324,7 +328,12 @@ public class LocationHierarchyService {
       }
 
       processChildLocation(
-          (Location) resource, parentIds, childrenByParent, parentByChildId, emittedIds);
+          (Location) resource,
+          parentIds,
+          parentDisplayById,
+          childrenByParent,
+          parentByChildId,
+          emittedIds);
     }
   }
 
@@ -349,6 +358,7 @@ public class LocationHierarchyService {
   private void processChildLocation(
       Location location,
       Set<String> parentIds,
+      Map<String, String> parentDisplayById,
       Map<String, List<LocationNode>> childrenByParent,
       Map<String, String> parentByChildId,
       Set<String> emittedIds) {
@@ -387,7 +397,9 @@ public class LocationHierarchyService {
 
     childrenByParent
         .computeIfAbsent(parentId, childParentId -> new ArrayList<>())
-        .add(mapLocation(location, canonicalLocationReference(parentId)));
+        .add(
+            mapLocation(
+                location, canonicalLocationReference(parentId), parentDisplayById.get(parentId)));
   }
 
   private String normalizeLocationIdForEdge(Location location) {
@@ -442,14 +454,79 @@ public class LocationHierarchyService {
     return parentIds;
   }
 
-  private LocationNode mapLocation(Location location, String canonicalPartOf) {
+  private Map<String, String> parentDisplayById(List<LocationNode> parents) {
+    Map<String, String> result = new HashMap<>();
+    for (LocationNode parent : parents) {
+      String parentId = normalizeLocationReference(parent.getId());
+      if (parent.getName() != null) {
+        result.put(parentId, parent.getName());
+      }
+    }
+    return result;
+  }
+
+  private LocationNode mapLocation(
+      Location location, String canonicalPartOf, String partOfDisplay) {
     String logicalId = normalizeLocationId(location);
 
     LocationNode node = new LocationNode();
     node.setId(canonicalLocationReference(logicalId));
     node.setName(location.hasName() ? location.getName() : null);
-    node.setPartOf(canonicalPartOf);
+    node.setStatus(location.hasStatus() ? location.getStatus().toCode() : null);
+    node.setDescription(location.hasDescription() ? location.getDescription() : null);
+    node.setPhysicalType(toFhirCodeableConcept(location.getPhysicalType()));
+    node.setType(toFhirCodeableConcepts(location.getType()));
+    node.setPartOf(toFhirReference(canonicalPartOf, partOfDisplay));
     return node;
+  }
+
+  private FhirReference toFhirReference(String reference, String display) {
+    if (reference == null && display == null) {
+      return null;
+    }
+    FhirReference fhirReference = new FhirReference();
+    fhirReference.setReference(reference);
+    fhirReference.setDisplay(display);
+    return fhirReference;
+  }
+
+  private FhirCodeableConcept toFhirCodeableConcept(CodeableConcept concept) {
+    if (concept == null || concept.isEmpty()) {
+      return null;
+    }
+    List<FhirCoding> coding = toFhirCodings(concept.getCoding());
+    if (coding.isEmpty()) {
+      return null;
+    }
+    FhirCodeableConcept dto = new FhirCodeableConcept();
+    dto.setCoding(coding);
+    return dto;
+  }
+
+  private List<FhirCodeableConcept> toFhirCodeableConcepts(List<CodeableConcept> concepts) {
+    List<FhirCodeableConcept> result = new ArrayList<>();
+    for (CodeableConcept concept : concepts) {
+      FhirCodeableConcept dto = toFhirCodeableConcept(concept);
+      if (dto != null) {
+        result.add(dto);
+      }
+    }
+    return result;
+  }
+
+  private List<FhirCoding> toFhirCodings(List<Coding> codings) {
+    List<FhirCoding> result = new ArrayList<>();
+    for (Coding coding : codings) {
+      if (coding == null || coding.isEmpty()) {
+        continue;
+      }
+      FhirCoding dto = new FhirCoding();
+      dto.setSystem(coding.hasSystem() ? coding.getSystem() : null);
+      dto.setCode(coding.hasCode() ? coding.getCode() : null);
+      dto.setDisplay(coding.hasDisplay() ? coding.getDisplay() : null);
+      result.add(dto);
+    }
+    return result;
   }
 
   private String normalizeLocationId(Location location) {

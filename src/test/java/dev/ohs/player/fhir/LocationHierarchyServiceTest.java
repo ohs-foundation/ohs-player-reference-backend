@@ -42,6 +42,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.stream.Stream;
 import org.hl7.fhir.r4.model.Bundle;
+import org.hl7.fhir.r4.model.CodeableConcept;
+import org.hl7.fhir.r4.model.Coding;
 import org.hl7.fhir.r4.model.Location;
 import org.hl7.fhir.r4.model.OperationOutcome;
 import org.hl7.fhir.r4.model.Reference;
@@ -97,6 +99,10 @@ class LocationHierarchyServiceTest {
     assertEquals("Location/root-id", hierarchy.getRoot().getId());
     assertEquals("Root Location", hierarchy.getRoot().getName());
     assertNull(hierarchy.getRoot().getPartOf());
+    assertNull(hierarchy.getRoot().getStatus());
+    assertNull(hierarchy.getRoot().getDescription());
+    assertNull(hierarchy.getRoot().getPhysicalType());
+    assertTrue(hierarchy.getRoot().getType().isEmpty());
     assertTrue(hierarchy.getRoot().getChildren().isEmpty());
     assertEquals(1, hierarchy.getMeta().getNodeCount());
     assertEquals(0, hierarchy.getMeta().getDepth());
@@ -131,6 +137,32 @@ class LocationHierarchyServiceTest {
     assertEquals(5, hierarchy.getMeta().getNodeCount());
     assertEquals(2, hierarchy.getMeta().getDepth());
     assertFalse(hierarchy.getMeta().isTruncated());
+  }
+
+  @Test
+  void buildHierarchy_MapsEnrichedLocationFields() {
+    Location child =
+        enrichedLocation(
+            "child-id",
+            "Location/root-id",
+            "Child",
+            Location.LocationStatus.SUSPENDED,
+            "Child description",
+            concept(
+                "http://terminology.hl7.org/CodeSystem/location-physical-type", "bu", "Building"),
+            concept("http://smartregister.org/codes/administrative-level", "1", "Level 1"));
+    LocationHierarchyService service =
+        realService(location("root-id", null, "Root"), searchsetBundle(child), searchsetBundle());
+
+    LocationHierarchy hierarchy = service.getLocationHierarchy("root-id");
+
+    LocationNode childNode = hierarchy.getRoot().getChildren().get(0);
+    assertEquals("suspended", childNode.getStatus());
+    assertEquals("Child description", childNode.getDescription());
+    assertEquals("bu", childNode.getPhysicalType().getCoding().get(0).getCode());
+    assertEquals("1", childNode.getType().get(0).getCoding().get(0).getCode());
+    assertEquals("Location/root-id", childNode.getPartOf().getReference());
+    assertEquals("Root", childNode.getPartOf().getDisplay());
   }
 
   @Test
@@ -307,7 +339,8 @@ class LocationHierarchyServiceTest {
 
     assertEquals(2, result.get("parent-a").size());
     assertEquals("Location/child-a", result.get("parent-a").get(0).getId());
-    assertEquals("Location/parent-a", result.get("parent-a").get(0).getPartOf());
+    assertEquals("Location/parent-a", result.get("parent-a").get(0).getPartOf().getReference());
+    assertNull(result.get("parent-a").get(0).getPartOf().getDisplay());
     assertEquals("Child A", result.get("parent-a").get(0).getName());
     assertEquals("Location/child-b", result.get("parent-a").get(1).getId());
     assertEquals(1, result.get("parent-b").size());
@@ -687,6 +720,26 @@ class LocationHierarchyServiceTest {
     }
     location.setName(name);
     return location;
+  }
+
+  private Location enrichedLocation(
+      String id,
+      String parentReference,
+      String name,
+      Location.LocationStatus status,
+      String description,
+      CodeableConcept physicalType,
+      CodeableConcept type) {
+    Location location = location(id, parentReference, name);
+    location.setStatus(status);
+    location.setDescription(description);
+    location.setPhysicalType(physicalType);
+    location.addType(type);
+    return location;
+  }
+
+  private CodeableConcept concept(String system, String code, String display) {
+    return new CodeableConcept().addCoding(new Coding(system, code, display));
   }
 
   private OperationOutcome outcome(OperationOutcome.IssueSeverity severity) {

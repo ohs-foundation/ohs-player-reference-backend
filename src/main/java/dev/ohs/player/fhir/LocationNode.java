@@ -19,13 +19,20 @@ import org.jspecify.annotations.Nullable;
 public class LocationNode {
   private String id;
   private @Nullable String name;
-  private @Nullable String partOf;
+  private @Nullable String status;
+  private @Nullable String description;
+  private @Nullable FhirReference partOf;
+  private @Nullable FhirCodeableConcept physicalType;
+  private List<FhirCodeableConcept> type = new ArrayList<>();
   private List<LocationNode> children = new ArrayList<>();
   private boolean hasMoreChildren;
 
-  /**
-   * Coalesces a null assignment to an empty list so {@code children} is never serialized as null.
-   */
+  /** Keeps type non-null. */
+  public void setType(@Nullable List<FhirCodeableConcept> type) {
+    this.type = type != null ? type : new ArrayList<>();
+  }
+
+  /** Keeps children non-null. */
   public void setChildren(@Nullable List<LocationNode> children) {
     this.children = children != null ? children : new ArrayList<>();
   }
