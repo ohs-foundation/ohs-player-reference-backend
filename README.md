@@ -192,7 +192,7 @@ The `email` field is always synced to `Practitioner.telecom` with `system=email`
 ## Location Hierarchy API
 
 | Method | Endpoint | Description |
-| --- | --- | --- | --- |
+| --- | --- | --- |
 | `GET` | `/api/location-hierarchy/{rootId}` | Return the `Location.partOf` tree starting from the requested FHIR Location id. |
 
 `rootId` must be a valid FHIR id: 1–64 characters using only letters, numbers, `-`, or `.`. The values `.` and `..` are rejected.
