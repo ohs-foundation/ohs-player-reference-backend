@@ -65,6 +65,8 @@ The plugin does not bundle FHIR Gateway classes — they are declared `provided`
 
 | Property | Default | Description |
 | --- | --- | --- |
+| `fhir.client.connect-timeout-ms` | `5000` | Maximum time in milliseconds to establish a connection to the upstream FHIR server. |
+| `fhir.client.read-timeout-ms` | `30000` | Maximum time in milliseconds to wait for one upstream FHIR response after the request is sent. |
 | `location-hierarchy.max-part-of-batch-size` | `100` | Number of parent Location ids to search for in one `Location.partOf` request. |
 | `location-hierarchy.upstream-page-size` | `200` | Number of child Locations to ask the FHIR server for per page. |
 | `location-hierarchy.max-depth` | `25` | Deepest child level to return below the requested root. `0` returns only the root. |
@@ -193,8 +195,6 @@ The `email` field is always synced to `Practitioner.telecom` with `system=email`
 | --- | --- | --- | --- |
 | `GET` | `/api/location-hierarchy/{rootId}` | `location-hierarchy.view` | Return the `Location.partOf` tree starting from the requested FHIR Location id. |
 
-The caller must be authenticated by the `/api/*` JWT filter and must have the `location-hierarchy.view` role. Authorization is checked before validating the path or reading from the cache/FHIR server.
-
 `rootId` must be a valid FHIR id: 1–64 characters using only letters, numbers, `-`, or `.`. The values `.` and `..` are rejected.
 
 **Response:**
@@ -204,13 +204,50 @@ The caller must be authenticated by the `/api/*` JWT filter and must have the `l
   "root": {
     "id": "root-location-id",
     "name": "Root Location",
+    "status": "active",
+    "description": "Top-level location",
     "partOf": null,
+    "physicalType": {
+      "coding": [
+        {
+          "system": "http://terminology.hl7.org/CodeSystem/location-physical-type",
+          "code": "jdn",
+          "display": "Jurisdiction"
+        }
+      ]
+    },
+    "type": [],
     "hasMoreChildren": false,
     "children": [
       {
         "id": "child-location-id",
         "name": "Child Location",
-        "partOf": "root-location-id",
+        "status": "active",
+        "description": "Child location",
+        "partOf": {
+          "reference": "Location/root-location-id",
+          "display": "Root Location"
+        },
+        "physicalType": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/location-physical-type",
+              "code": "bu",
+              "display": "Building"
+            }
+          ]
+        },
+        "type": [
+          {
+            "coding": [
+              {
+                "system": "http://ohs.dev/codes/administrative-level",
+                "code": "1",
+                "display": "Level 1"
+              }
+            ]
+          }
+        ],
         "hasMoreChildren": false,
         "children": []
       }
@@ -226,6 +263,8 @@ The caller must be authenticated by the `/api/*` JWT filter and must have the `l
 ```
 
 The service builds the tree one level at a time. It starts with the root, fetches its children, then fetches the next level of children, and continues until it reaches `max-depth`, `max-nodes`, or the end of the tree. Results are ordered consistently so the same stored hierarchy returns the same response order.
+
+Each node includes selected fields from the backing FHIR `Location`: `status`, `description`, `physicalType`, and `type`. Child nodes include `partOf.reference` and `partOf.display`; the root node has `partOf=null`.
 
 `max-depth` controls how many child levels can be returned. `max-nodes` controls how many Locations can be returned in one response, including the root. If the response limit is reached, the service stops at a clean parent boundary instead of returning only some children for the same parent. Nodes that may still have children are marked with `hasMoreChildren=true`. When `hasMoreChildren=false`, the returned child list for that node is complete.
 
@@ -496,6 +535,7 @@ Authorization uses a per-resource, three-level hierarchy. Higher levels satisfy 
 | `bulk-import.manage` | `POST /api/bulk-import/*`                                                                          |
 | `roles.view` | `GET /api/roles`                                                                                   |
 | `practitioner-details.view` | `GET /api/practitioner-details`                                                                    |
+| `location-hierarchy.view` | `GET /api/location-hierarchy/{rootId}`                                                                                 |
 
 Roles are read from the JWT claim path returned by the configured IAM provider. For Keycloak this is `realm_access.roles`. A token missing the required role receives `403 Forbidden`; a missing or invalid token receives `401 Unauthorized`.
 
