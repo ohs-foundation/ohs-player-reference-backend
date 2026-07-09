@@ -197,6 +197,8 @@ The `email` field is always synced to `Practitioner.telecom` with `system=email`
 
 `rootId` must be a valid FHIR id: 1–64 characters using only letters, numbers, `-`, or `.`. The values `.` and `..` are rejected.
 
+Location node `id` values are FHIR logical ids, while relationship references such as `partOf.reference` use canonical FHIR references like `Location/{id}`.
+
 **Response:**
 
 ```json
@@ -267,6 +269,8 @@ The service builds the tree one level at a time. It starts with the root, fetche
 Each node includes selected fields from the backing FHIR `Location`: `status`, `description`, `physicalType`, and `type`. Child nodes include `partOf.reference` and `partOf.display`; the root node has `partOf=null`.
 
 `max-depth` controls how many child levels can be returned. `max-nodes` controls how many Locations can be returned in one response, including the root. If the response limit is reached, the service stops at a clean parent boundary instead of returning only some children for the same parent. Nodes that may still have children are marked with `hasMoreChildren=true`. When `hasMoreChildren=false`, the returned child list for that node is complete.
+
+If `meta.truncated=true`, the returned hierarchy is incomplete because traversal stopped before the service checked every descendant. To return a fuller tree, update the OHS Player backend deployment configuration, for example `location-hierarchy.max-depth` or `location-hierarchy.max-nodes`, then refresh/rebuild the cached hierarchy.
 
 Successful responses are cached in-process with Caffeine. The default TTL is one day, so the endpoint accepts up to one day of Location hierarchy staleness. The cache is local to each backend JVM; each replica can build the same root independently after startup or expiry. Shared Redis caching and distributed miss coordination are planned for v2.
 
