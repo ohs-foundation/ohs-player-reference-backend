@@ -115,11 +115,9 @@ public class BulkLocationImportServlet extends HttpServlet {
                     headerIndex,
                     rowNumber,
                     crossSourceIdToFhirId,
-                    crossNameToFhirId,
                     crossFhirIdToNamePath,
                     crossFhirIdToUuidPath,
-                    batchSourceIdToUuid,
-                    batchNameToUuid);
+                    batchSourceIdToUuid);
           } catch (IntraBatchFlushSignal e) {
             // Parent is in the current batch. Flush it so the parent is committed and its FHIR ID
             // lands in the cross-batch cache, then retry this row.
@@ -143,11 +141,9 @@ public class BulkLocationImportServlet extends HttpServlet {
                     headerIndex,
                     rowNumber,
                     crossSourceIdToFhirId,
-                    crossNameToFhirId,
                     crossFhirIdToNamePath,
                     crossFhirIdToUuidPath,
-                    batchSourceIdToUuid,
-                    batchNameToUuid);
+                    batchSourceIdToUuid);
           }
 
           currentBatch.add(entry);
@@ -325,11 +321,9 @@ public class BulkLocationImportServlet extends HttpServlet {
       Map<String, Integer> headerIndex,
       int rowNumber,
       Map<String, String> crossSourceIdToFhirId,
-      Map<String, String> crossNameToFhirId,
       Map<String, String> crossFhirIdToNamePath,
       Map<String, String> crossFhirIdToUuidPath,
-      Map<String, String> batchSourceIdToUuid,
-      Map<String, String> batchNameToUuid) {
+      Map<String, String> batchSourceIdToUuid) {
     String id = csvProcessor.getColumn(columns, headerIndex, "id");
     String name = csvProcessor.getColumn(columns, headerIndex, "name");
     String sourceId = csvProcessor.getColumn(columns, headerIndex, "source_id");
