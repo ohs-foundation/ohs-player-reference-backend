@@ -22,7 +22,6 @@ import org.hl7.fhir.instance.model.api.IIdType;
 import org.hl7.fhir.r4.model.Bundle;
 import org.hl7.fhir.r4.model.CodeableConcept;
 import org.hl7.fhir.r4.model.Coding;
-import org.hl7.fhir.r4.model.IdType;
 import org.hl7.fhir.r4.model.Location;
 import org.hl7.fhir.r4.model.OperationOutcome;
 import org.hl7.fhir.r4.model.Reference;
@@ -116,7 +115,7 @@ public class LocationHierarchyService {
     LocationNode rootNode = mapLocation(rootLocation, null, null);
 
     Set<String> emittedIds = new HashSet<>();
-    emittedIds.add(normalizeLocationReference(rootNode.getId()));
+    emittedIds.add(rootNode.getId());
 
     int nodeCount = 1;
     int deepestDepth = 0;
@@ -144,7 +143,7 @@ public class LocationHierarchyService {
 
         for (int parentIndex = batchStart; parentIndex < batchEnd; parentIndex++) {
           LocationNode parent = currentLevel.get(parentIndex);
-          String parentId = normalizeLocationReference(parent.getId());
+          String parentId = parent.getId();
           List<LocationNode> children = childrenByParent.getOrDefault(parentId, List.of());
           if (children.isEmpty()) {
             continue;
@@ -161,7 +160,7 @@ public class LocationHierarchyService {
 
           parent.getChildren().addAll(children);
           for (LocationNode child : children) {
-            emittedIds.add(normalizeLocationReference(child.getId()));
+            emittedIds.add(child.getId());
           }
           nextLevel.addAll(children);
           nodeCount += children.size();
@@ -444,8 +443,7 @@ public class LocationHierarchyService {
   private List<String> sortedParentLogicalIds(List<LocationNode> parents) {
     List<String> parentIds = new ArrayList<>(parents.size());
     for (LocationNode parent : parents) {
-      String parentId = normalizeLocationReference(parent.getId());
-      parentIds.add(parentId);
+      parentIds.add(parent.getId());
     }
     // The FHIR search is semantically order-independent, but sorting keeps the generated batched
     // request stable across JVM collection iteration order, which makes behavior easier to test,
@@ -457,9 +455,8 @@ public class LocationHierarchyService {
   private Map<String, String> parentDisplayById(List<LocationNode> parents) {
     Map<String, String> result = new HashMap<>();
     for (LocationNode parent : parents) {
-      String parentId = normalizeLocationReference(parent.getId());
       if (parent.getName() != null) {
-        result.put(parentId, parent.getName());
+        result.put(parent.getId(), parent.getName());
       }
     }
     return result;
@@ -470,7 +467,7 @@ public class LocationHierarchyService {
     String logicalId = normalizeLocationId(location);
 
     LocationNode node = new LocationNode();
-    node.setId(canonicalLocationReference(logicalId));
+    node.setId(logicalId);
     node.setName(location.hasName() ? location.getName() : null);
     node.setStatus(location.hasStatus() ? location.getStatus().toCode() : null);
     node.setDescription(location.hasDescription() ? location.getDescription() : null);
@@ -533,14 +530,6 @@ public class LocationHierarchyService {
     String logicalId = location.getIdElement().toUnqualifiedVersionless().getIdPart();
     if (logicalId == null || logicalId.isBlank()) {
       throw new LocationHierarchyUpstreamException("Location is missing a logical id");
-    }
-    return logicalId;
-  }
-
-  private String normalizeLocationReference(String reference) {
-    String logicalId = new IdType(reference).toUnqualifiedVersionless().getIdPart();
-    if (logicalId == null || logicalId.isBlank()) {
-      throw new LocationHierarchyUpstreamException("Location reference is missing a logical id");
     }
     return logicalId;
   }

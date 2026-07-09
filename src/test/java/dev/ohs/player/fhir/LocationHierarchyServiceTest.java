@@ -96,7 +96,7 @@ class LocationHierarchyServiceTest {
 
     LocationHierarchy hierarchy = service.getLocationHierarchy("root-id");
 
-    assertEquals("Location/root-id", hierarchy.getRoot().getId());
+    assertEquals("root-id", hierarchy.getRoot().getId());
     assertEquals("Root Location", hierarchy.getRoot().getName());
     assertNull(hierarchy.getRoot().getPartOf());
     assertNull(hierarchy.getRoot().getStatus());
@@ -128,12 +128,12 @@ class LocationHierarchyServiceTest {
 
     LocationNode rootNode = hierarchy.getRoot();
     assertEquals(2, rootNode.getChildren().size());
-    assertEquals("Location/region-a", rootNode.getChildren().get(0).getId());
-    assertEquals("Location/region-b", rootNode.getChildren().get(1).getId());
+    assertEquals("region-a", rootNode.getChildren().get(0).getId());
+    assertEquals("region-b", rootNode.getChildren().get(1).getId());
     assertEquals(1, rootNode.getChildren().get(0).getChildren().size());
-    assertEquals("Location/district-a", rootNode.getChildren().get(0).getChildren().get(0).getId());
+    assertEquals("district-a", rootNode.getChildren().get(0).getChildren().get(0).getId());
     assertEquals(1, rootNode.getChildren().get(1).getChildren().size());
-    assertEquals("Location/district-b", rootNode.getChildren().get(1).getChildren().get(0).getId());
+    assertEquals("district-b", rootNode.getChildren().get(1).getChildren().get(0).getId());
     assertEquals(5, hierarchy.getMeta().getNodeCount());
     assertEquals(2, hierarchy.getMeta().getDepth());
     assertFalse(hierarchy.getMeta().isTruncated());
@@ -141,16 +141,12 @@ class LocationHierarchyServiceTest {
 
   @Test
   void buildHierarchy_MapsEnrichedLocationFields() {
-    Location child =
-        enrichedLocation(
-            "child-id",
-            "Location/root-id",
-            "Child",
-            Location.LocationStatus.SUSPENDED,
-            "Child description",
-            concept(
-                "http://terminology.hl7.org/CodeSystem/location-physical-type", "bu", "Building"),
-            concept("http://smartregister.org/codes/administrative-level", "1", "Level 1"));
+    Location child = location("child-id", "Location/root-id", "Child");
+    child.setStatus(Location.LocationStatus.SUSPENDED);
+    child.setDescription("Child description");
+    child.setPhysicalType(
+        concept("http://terminology.hl7.org/CodeSystem/location-physical-type", "bu", "Building"));
+    child.addType(concept("http://smartregister.org/codes/administrative-level", "1", "Level 1"));
     LocationHierarchyService service =
         realService(location("root-id", null, "Root"), searchsetBundle(child), searchsetBundle());
 
@@ -220,7 +216,7 @@ class LocationHierarchyServiceTest {
     LocationNode regionA = hierarchy.getRoot().getChildren().get(0);
     LocationNode regionB = hierarchy.getRoot().getChildren().get(1);
     LocationNode districtA = regionA.getChildren().get(0);
-    assertEquals("Location/district-a", districtA.getId());
+    assertEquals("district-a", districtA.getId());
     assertTrue(districtA.isHasMoreChildren());
     assertTrue(districtA.getChildren().isEmpty());
     assertTrue(regionB.isHasMoreChildren());
@@ -243,8 +239,8 @@ class LocationHierarchyServiceTest {
     LocationHierarchy hierarchy = service.getLocationHierarchy("root-id");
 
     assertEquals(2, hierarchy.getRoot().getChildren().size());
-    assertEquals("Location/region-a", hierarchy.getRoot().getChildren().get(0).getId());
-    assertEquals("Location/region-b", hierarchy.getRoot().getChildren().get(1).getId());
+    assertEquals("region-a", hierarchy.getRoot().getChildren().get(0).getId());
+    assertEquals("region-b", hierarchy.getRoot().getChildren().get(1).getId());
     assertTrue(hierarchy.getRoot().getChildren().get(0).isHasMoreChildren());
     assertTrue(hierarchy.getRoot().getChildren().get(1).isHasMoreChildren());
     assertEquals(3, hierarchy.getMeta().getNodeCount());
@@ -271,9 +267,9 @@ class LocationHierarchyServiceTest {
     LocationNode regionA = hierarchy.getRoot().getChildren().get(0);
     LocationNode regionB = hierarchy.getRoot().getChildren().get(1);
     assertEquals(1, regionA.getChildren().size());
-    assertEquals("Location/district-a", regionA.getChildren().get(0).getId());
+    assertEquals("district-a", regionA.getChildren().get(0).getId());
     assertEquals(1, regionB.getChildren().size());
-    assertEquals("Location/district-b", regionB.getChildren().get(0).getId());
+    assertEquals("district-b", regionB.getChildren().get(0).getId());
     assertEquals(5, hierarchy.getMeta().getNodeCount());
     assertEquals(2, hierarchy.getMeta().getDepth());
     assertFalse(hierarchy.getMeta().isTruncated());
@@ -301,9 +297,7 @@ class LocationHierarchyServiceTest {
 
     Map<String, List<LocationNode>> result =
         service.fetchChildrenForBatch(
-            fixture.client,
-            List.of(node("Location/parent-b"), node("Location/parent-a")),
-            Set.of());
+            fixture.client, List.of(node("parent-b"), node("parent-a")), Set.of());
 
     assertTrue(result.isEmpty());
     ArgumentCaptor<ICriterion> criterionCaptor = ArgumentCaptor.forClass(ICriterion.class);
@@ -333,18 +327,15 @@ class LocationHierarchyServiceTest {
 
     Map<String, List<LocationNode>> result =
         service.fetchChildrenForBatch(
-            searchClient(bundle).client,
-            List.of(node("Location/parent-b"), node("Location/parent-a")),
-            Set.of());
+            searchClient(bundle).client, List.of(node("parent-b"), node("parent-a")), Set.of());
 
     assertEquals(2, result.get("parent-a").size());
-    assertEquals("Location/child-a", result.get("parent-a").get(0).getId());
+    assertEquals("child-a", result.get("parent-a").get(0).getId());
     assertEquals("Location/parent-a", result.get("parent-a").get(0).getPartOf().getReference());
-    assertNull(result.get("parent-a").get(0).getPartOf().getDisplay());
     assertEquals("Child A", result.get("parent-a").get(0).getName());
-    assertEquals("Location/child-b", result.get("parent-a").get(1).getId());
+    assertEquals("child-b", result.get("parent-a").get(1).getId());
     assertEquals(1, result.get("parent-b").size());
-    assertEquals("Location/child-c", result.get("parent-b").get(0).getId());
+    assertEquals("child-c", result.get("parent-b").get(0).getId());
   }
 
   @ParameterizedTest
@@ -364,7 +355,7 @@ class LocationHierarchyServiceTest {
 
     Map<String, List<LocationNode>> result =
         service.fetchChildrenForBatch(
-            searchClient(bundle).client, List.of(node("Location/parent-a")), Set.of());
+            searchClient(bundle).client, List.of(node("parent-a")), Set.of());
 
     assertEquals(1, result.get("parent-a").size());
   }
@@ -386,7 +377,7 @@ class LocationHierarchyServiceTest {
         LocationHierarchyUpstreamException.class,
         () ->
             service.fetchChildrenForBatch(
-                searchClient(bundle).client, List.of(node("Location/parent-a")), Set.of()));
+                searchClient(bundle).client, List.of(node("parent-a")), Set.of()));
   }
 
   @Test
@@ -399,9 +390,7 @@ class LocationHierarchyServiceTest {
         LocationHierarchyUpstreamException.class,
         () ->
             service.fetchChildrenForBatch(
-                searchClient(missingResource).client,
-                List.of(node("Location/parent-a")),
-                Set.of()));
+                searchClient(missingResource).client, List.of(node("parent-a")), Set.of()));
 
     Bundle outcomeAsMatch = searchsetBundle();
     outcomeAsMatch.addEntry().setResource(outcome(OperationOutcome.IssueSeverity.WARNING));
@@ -409,7 +398,7 @@ class LocationHierarchyServiceTest {
         LocationHierarchyUpstreamException.class,
         () ->
             service.fetchChildrenForBatch(
-                searchClient(outcomeAsMatch).client, List.of(node("Location/parent-a")), Set.of()));
+                searchClient(outcomeAsMatch).client, List.of(node("parent-a")), Set.of()));
 
     Bundle includeLocation = searchsetBundle();
     includeLocation
@@ -421,9 +410,7 @@ class LocationHierarchyServiceTest {
         LocationHierarchyUpstreamException.class,
         () ->
             service.fetchChildrenForBatch(
-                searchClient(includeLocation).client,
-                List.of(node("Location/parent-a")),
-                Set.of()));
+                searchClient(includeLocation).client, List.of(node("parent-a")), Set.of()));
   }
 
   @Test
@@ -445,11 +432,11 @@ class LocationHierarchyServiceTest {
     Map<String, List<LocationNode>> result =
         service.fetchChildrenForBatch(
             searchClient(bundle).client,
-            List.of(node("Location/parent-a"), node("Location/self-parent")),
+            List.of(node("parent-a"), node("self-parent")),
             Set.of("already-emitted"));
 
     assertEquals(1, result.get("parent-a").size());
-    assertEquals("Location/valid-child", result.get("parent-a").get(0).getId());
+    assertEquals("valid-child", result.get("parent-a").get(0).getId());
   }
 
   @Test
@@ -463,7 +450,7 @@ class LocationHierarchyServiceTest {
 
     Map<String, List<LocationNode>> result =
         service.fetchChildrenForBatch(
-            searchClient(bundle).client, List.of(node("Location/parent-a")), Set.of());
+            searchClient(bundle).client, List.of(node("parent-a")), Set.of());
 
     assertEquals(1, result.get("parent-a").size());
     assertEquals("First", result.get("parent-a").get(0).getName());
@@ -481,7 +468,7 @@ class LocationHierarchyServiceTest {
         () ->
             service.fetchChildrenForBatch(
                 searchClient(bundle).client,
-                List.of(node("Location/parent-a"), node("Location/parent-b")),
+                List.of(node("parent-a"), node("parent-b")),
                 Set.of()));
   }
 
@@ -497,7 +484,7 @@ class LocationHierarchyServiceTest {
     LocationHierarchyService service = service();
 
     Map<String, List<LocationNode>> result =
-        service.fetchChildrenForBatch(fixture.client, List.of(node("Location/parent-a")), Set.of());
+        service.fetchChildrenForBatch(fixture.client, List.of(node("parent-a")), Set.of());
 
     assertTrue(result.isEmpty());
     verify(fixture.client).loadPage();
@@ -519,9 +506,7 @@ class LocationHierarchyServiceTest {
 
     assertThrows(
         LocationHierarchyUpstreamException.class,
-        () ->
-            service.fetchChildrenForBatch(
-                fixture.client, List.of(node("Location/parent-a")), Set.of()));
+        () -> service.fetchChildrenForBatch(fixture.client, List.of(node("parent-a")), Set.of()));
   }
 
   @Test
@@ -534,7 +519,7 @@ class LocationHierarchyServiceTest {
         LocationHierarchyUpstreamException.class,
         () ->
             service.fetchChildrenForBatch(
-                searchClient(collection).client, List.of(node("Location/parent-a")), Set.of()));
+                searchClient(collection).client, List.of(node("parent-a")), Set.of()));
   }
 
   @Test
@@ -545,9 +530,7 @@ class LocationHierarchyServiceTest {
 
     assertThrows(
         LocationHierarchyUpstreamException.class,
-        () ->
-            service.fetchChildrenForBatch(
-                fixture.client, List.of(node("Location/parent-a")), Set.of()));
+        () -> service.fetchChildrenForBatch(fixture.client, List.of(node("parent-a")), Set.of()));
   }
 
   @Test
@@ -562,9 +545,7 @@ class LocationHierarchyServiceTest {
 
     assertThrows(
         LocationHierarchyUpstreamException.class,
-        () ->
-            service.fetchChildrenForBatch(
-                fixture.client, List.of(node("Location/parent-a")), Set.of()));
+        () -> service.fetchChildrenForBatch(fixture.client, List.of(node("parent-a")), Set.of()));
   }
 
   private TestLocationHierarchyService service(Function<String, LocationHierarchy> builder) {
@@ -719,22 +700,6 @@ class LocationHierarchyServiceTest {
       location.setPartOf(new Reference(parentReference));
     }
     location.setName(name);
-    return location;
-  }
-
-  private Location enrichedLocation(
-      String id,
-      String parentReference,
-      String name,
-      Location.LocationStatus status,
-      String description,
-      CodeableConcept physicalType,
-      CodeableConcept type) {
-    Location location = location(id, parentReference, name);
-    location.setStatus(status);
-    location.setDescription(description);
-    location.setPhysicalType(physicalType);
-    location.addType(type);
     return location;
   }
 
