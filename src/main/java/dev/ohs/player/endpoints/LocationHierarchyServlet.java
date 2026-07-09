@@ -12,6 +12,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -76,7 +77,7 @@ public class LocationHierarchyServlet extends HttpServlet {
     ServletResponseUtil.writeJsonSuccess(response, hierarchy);
   }
 
-  private String extractRootId(String pathInfo) {
+  private @Nullable String extractRootId(String pathInfo) {
     if (pathInfo == null || pathInfo.length() < 2 || pathInfo.charAt(0) != '/') return null;
 
     String rootId = pathInfo.substring(1);

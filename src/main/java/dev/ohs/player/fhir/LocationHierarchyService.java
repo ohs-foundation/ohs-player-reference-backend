@@ -26,6 +26,7 @@ import org.hl7.fhir.r4.model.Location;
 import org.hl7.fhir.r4.model.OperationOutcome;
 import org.hl7.fhir.r4.model.Reference;
 import org.hl7.fhir.r4.model.Resource;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -210,7 +211,7 @@ public class LocationHierarchyService {
       IGenericClient client, List<LocationNode> parents, Set<String> emittedIds) {
     Objects.requireNonNull(parents, "parents cannot be null");
     if (parents.isEmpty()) {
-      return Collections.emptyMap();
+      return new HashMap<>();
     }
 
     List<String> parentIds = sortedParentLogicalIds(parents);
@@ -401,7 +402,7 @@ public class LocationHierarchyService {
                 location, canonicalLocationReference(parentId), parentDisplayById.get(parentId)));
   }
 
-  private String normalizeLocationIdForEdge(Location location) {
+  private @Nullable String normalizeLocationIdForEdge(Location location) {
     try {
       return normalizeLocationId(location);
     } catch (LocationHierarchyUpstreamException e) {
@@ -409,7 +410,7 @@ public class LocationHierarchyService {
     }
   }
 
-  private String normalizeParentIdForEdge(Reference partOf) {
+  private @Nullable String normalizeParentIdForEdge(Reference partOf) {
     if (partOf == null || partOf.isEmpty()) {
       return null;
     }
@@ -426,7 +427,7 @@ public class LocationHierarchyService {
     return parentId == null || parentId.isBlank() ? null : parentId;
   }
 
-  private void logSkippedEdge(String childId, String parentId, String reason) {
+  private void logSkippedEdge(@Nullable String childId, @Nullable String parentId, String reason) {
     logger.warn(
         "Skipping Location hierarchy edge: childId={}, parentId={}, reason={}",
         childId,
@@ -463,7 +464,7 @@ public class LocationHierarchyService {
   }
 
   private LocationNode mapLocation(
-      Location location, String canonicalPartOf, String partOfDisplay) {
+      Location location, @Nullable String canonicalPartOf, @Nullable String partOfDisplay) {
     String logicalId = normalizeLocationId(location);
 
     LocationNode node = new LocationNode();
@@ -477,7 +478,8 @@ public class LocationHierarchyService {
     return node;
   }
 
-  private FhirReference toFhirReference(String reference, String display) {
+  private @Nullable FhirReference toFhirReference(
+      @Nullable String reference, @Nullable String display) {
     if (reference == null && display == null) {
       return null;
     }
@@ -487,7 +489,7 @@ public class LocationHierarchyService {
     return fhirReference;
   }
 
-  private FhirCodeableConcept toFhirCodeableConcept(CodeableConcept concept) {
+  private @Nullable FhirCodeableConcept toFhirCodeableConcept(CodeableConcept concept) {
     if (concept == null || concept.isEmpty()) {
       return null;
     }

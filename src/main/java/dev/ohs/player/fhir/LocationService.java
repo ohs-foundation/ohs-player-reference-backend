@@ -12,12 +12,8 @@ import org.hl7.fhir.r4.model.Identifier;
 import org.hl7.fhir.r4.model.Location;
 import org.hl7.fhir.r4.model.Reference;
 import org.jspecify.annotations.Nullable;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 public class LocationService {
-
-  private static final Logger logger = LoggerFactory.getLogger(LocationService.class);
 
   public static final String SOURCE_ID_IDENTIFIER_SYSTEM = "http://ohs.dev/identifiers/source-id";
   private static final String ADMINISTRATIVE_LEVEL_SYSTEM =
