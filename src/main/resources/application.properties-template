@@ -2,3 +2,22 @@
 logging.level.dev.ohs.player=TRACE
 iam.provider.client-id=
 iam.provider.client-secret=
+
+# Maximum time to establish a connection to the upstream FHIR server
+fhir.client.connect-timeout-ms=5000
+# Maximum time to wait for one upstream FHIR response after the request is sent
+fhir.client.read-timeout-ms=30000
+
+# Maximum parent Location ids included in one upstream child-location search request
+location-hierarchy.max-part-of-batch-size=100
+# Requested number of Location resources per upstream FHIR search page
+location-hierarchy.upstream-page-size=200
+# Maximum hierarchy depth returned in the response; the requested root is depth 0
+location-hierarchy.max-depth=25
+# Maximum number of Location nodes returned in one hierarchy response, including the root
+location-hierarchy.max-nodes=10000
+
+# Time a built hierarchy can remain in this JVM's cache before it must be rebuilt
+location-hierarchy.cache-ttl-seconds=86400
+# Maximum total cached Location nodes across all hierarchy responses in this JVM
+location-hierarchy.cache-max-total-nodes=100000

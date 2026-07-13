@@ -12,6 +12,7 @@
         <maven.compiler.release>11</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <mockito.version>5.23.0</mockito.version>
+        <caffeine.version>3.1.8</caffeine.version>
         <lombok.version>1.18.46</lombok.version>
         <error-prone.version>2.49.0</error-prone.version>
         <nullaway.version>0.13.7</nullaway.version>
@@ -52,6 +53,12 @@
             <groupId>com.nimbusds</groupId>
             <artifactId>nimbus-jose-jwt</artifactId>
             <version>10.9.1</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
+            <version>${caffeine.version}</version>
         </dependency>
 
         <dependency>
