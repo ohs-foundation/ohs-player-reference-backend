@@ -481,6 +481,25 @@ Each row creates one `PractitionerRole` resource linking the practitioner to an 
 
 ---
 
+### Bulk Import Performance
+
+Benchmarked locally with the [`performance-tests/`](performance-tests) harness against a single-node FHIR Gateway + Keycloak: 10,000-row CSVs, 4 runs per entity, default `BULK_IMPORT_BATCH_SIZE` (`50`).
+
+| Entity | Avg wall time | Avg rows/sec | Range (rows/sec) |
+| --- | --- | --- | --- |
+| Users | ~12.1 min | ~13.9 | 12.4 – 15.3 |
+| Organizations | ~40 s | ~253 | 230 – 274 |
+| Locations | ~2.6 min | ~65 | 58 – 71 |
+| User assignments | ~2.9 min | ~58 | 54 – 62 |
+
+**Users import is disproportionately slower** because, unlike the other three endpoints, it does not use FHIR BATCH bundles — each row issues its own synchronous IAM `createUser` call plus a Practitioner write. Throughput is bound by round-trips to the IAM provider, so raising `BULK_IMPORT_BATCH_SIZE` has no effect on user import speed.
+
+Raising `BULK_IMPORT_BATCH_SIZE` above the default is expected to improve organizations/locations/user-assignments throughput further by reducing FHIR round-trips; these figures were measured at the default of `50`.
+
+Reproduce with `python runners/run_all.py` from `performance-tests/` — see [`performance-tests/README.md`](performance-tests/README.md) for setup. Raw per-run output is appended to `performance-tests/reports/summary.csv`.
+
+---
+
 ## Practitioner Details API
 
 | Method | Endpoint | Description |
