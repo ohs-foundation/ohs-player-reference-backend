@@ -1,7 +1,12 @@
 package dev.ohs.player.configs;
 
 import ca.uhn.fhir.context.FhirContext;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import dev.ohs.player.auth.JwtTokenValidator;
+import dev.ohs.player.fhir.LocationHierarchy;
+import dev.ohs.player.fhir.LocationHierarchyConfig;
+import dev.ohs.player.fhir.LocationHierarchyService;
 import dev.ohs.player.fhir.LocationService;
 import dev.ohs.player.fhir.OrganizationService;
 import dev.ohs.player.fhir.PractitionerDetailService;
@@ -9,6 +14,7 @@ import dev.ohs.player.fhir.PractitionerRoleService;
 import dev.ohs.player.fhir.PractitionerService;
 import dev.ohs.player.iam.IamProviderService;
 import dev.ohs.player.iam.keycloak.KeycloakIamProvider;
+import java.time.Duration;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
@@ -22,8 +28,67 @@ public class OtherConfigs {
 
   @Bean
   @ConditionalOnMissingBean(FhirContext.class)
-  public FhirContext fhirContext() {
-    return FhirContext.forR4Cached();
+  public FhirContext fhirContext(
+      @Value("${fhir.client.connect-timeout-ms:5000}") int connectTimeoutMs,
+      @Value("${fhir.client.read-timeout-ms:30000}") int readTimeoutMs) {
+    if (connectTimeoutMs <= 0) {
+      throw new IllegalArgumentException("FHIR client connect timeout must be greater than zero");
+    }
+    if (readTimeoutMs <= 0) {
+      throw new IllegalArgumentException("FHIR client read timeout must be greater than zero");
+    }
+
+    FhirContext fhirContext = FhirContext.forR4Cached();
+    fhirContext.getRestfulClientFactory().setConnectTimeout(connectTimeoutMs);
+    fhirContext.getRestfulClientFactory().setSocketTimeout(readTimeoutMs);
+    return fhirContext;
+  }
+
+  FhirContext fhirContext() {
+    return fhirContext(5_000, 30_000);
+  }
+
+  @Bean
+  public Cache<String, LocationHierarchy> locationHierarchyCache(
+      @Value("${location-hierarchy.cache-ttl-seconds:86400}") long ttlSeconds,
+      @Value("${location-hierarchy.cache-max-total-nodes:100000}") long maxTotalCachedNodes) {
+    if (ttlSeconds <= 0) {
+      throw new IllegalArgumentException("Location hierarchy cache TTL must be greater than zero");
+    }
+    if (maxTotalCachedNodes <= 0) {
+      throw new IllegalArgumentException(
+          "Location hierarchy cache maximum node weight must be greater than zero");
+    }
+
+    return Caffeine.newBuilder()
+        .expireAfterWrite(Duration.ofSeconds(ttlSeconds))
+        .maximumWeight(maxTotalCachedNodes)
+        .weigher(
+            (String rootId, LocationHierarchy hierarchy) ->
+                Math.max(1, hierarchy.getMeta().getNodeCount()))
+        .build();
+  }
+
+  @Bean
+  public LocationHierarchyService locationHierarchyService(
+      Cache<String, LocationHierarchy> locationHierarchyCache,
+      FhirContext fhirContext,
+      LocationHierarchyConfig locationHierarchyConfig) {
+    String fhirServerUrl = System.getenv(PROXY_TO_ENV);
+    if (fhirServerUrl == null || fhirServerUrl.isBlank()) {
+      throw new IllegalStateException("PROXY_TO environment variable is not set");
+    }
+    return new LocationHierarchyService(
+        locationHierarchyCache, fhirContext, fhirServerUrl, locationHierarchyConfig);
+  }
+
+  @Bean
+  public LocationHierarchyConfig locationHierarchyConfig(
+      @Value("${location-hierarchy.max-part-of-batch-size:100}") int maxPartOfBatchSize,
+      @Value("${location-hierarchy.upstream-page-size:200}") int upstreamPageSize,
+      @Value("${location-hierarchy.max-depth:25}") int maxDepth,
+      @Value("${location-hierarchy.max-nodes:10000}") int maxNodes) {
+    return new LocationHierarchyConfig(maxPartOfBatchSize, upstreamPageSize, maxDepth, maxNodes);
   }
 
   @Value("${iam.provider.client-id:}")
