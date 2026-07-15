@@ -384,7 +384,7 @@ One progress event is emitted per completed batch (not per row). Error events ar
 
 | Environment variable | Default | Description |
 | --- | --- | --- |
-| `BULK_IMPORT_BATCH_SIZE` | `5` | Number of rows per FHIR BATCH bundle. The default is intentionally small for testing. **Change to `50` for production** to reduce FHIR HTTP round-trips significantly (e.g. 50K rows → ~1 000 bundle calls instead of ~50 000). |
+| `BULK_IMPORT_BATCH_SIZE` | `50` | Number of rows per FHIR BATCH bundle. **Change to a higher number for production** to reduce FHIR HTTP round-trips significantly (e.g. for 100, 50K rows → ~500 bundle calls instead of ~1000). |
 
 ---
 

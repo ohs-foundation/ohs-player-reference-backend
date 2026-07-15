@@ -41,7 +41,7 @@ public class OhsPlayerBackendExtensionSpringConfiguration {
   private static final Logger logger =
       org.slf4j.LoggerFactory.getLogger(OhsPlayerBackendExtensionSpringConfiguration.class);
 
-  private static final int DEFAULT_BULK_IMPORT_BATCH_SIZE = 5;
+  private static final int DEFAULT_BULK_IMPORT_BATCH_SIZE = 50;
 
   @Autowired FhirContext fhirContext;
 
