@@ -570,7 +570,9 @@ Set `ACCESS_CHECKER=ohs_player_access` on the Gateway to enable `OhsPlayerAccess
 
 Roles are extracted with the same `IamProviderService.extractRolesFromToken` used by the `/api/*` token validator, so this checker works unchanged with any configured IAM provider.
 
-To enable AuditEvents for these requests, set `AUDIT_EVENT_ACTIONS_CONFIG` on the Gateway to the FHIR AuditEvent action codes to log, e.g. `C,R,U,D,E` for all CRUD + search, or `C,U,D` for writes only. This is independent of the checker choice.
+To enable AuditEvents for these requests, set `AUDIT_EVENT_ACTIONS_CONFIG` on the Gateway to the FHIR AuditEvent action codes to log, written together with no separator (not comma-separated), e.g. `CRUDE` for all CRUD + search, or `CUD` for writes only. This is independent of the checker choice.
+
+**Note:** an AuditEvent is written per REST request — and per entry within a Bundle (batch/transaction), not just once for the whole Bundle. On a busy deployment, or with a broad config like `CRUDE` (which also covers reads and searches), this can generate AuditEvent resources quickly and grow the upstream FHIR store's storage significantly. Prefer a narrower config (e.g. `CUD` for writes only) unless you specifically need read/search auditing, and plan storage/retention for the upstream FHIR store accordingly.
 
 ---
 

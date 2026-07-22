@@ -36,9 +36,14 @@ import org.jspecify.annotations.Nullable;
  * #getUserWho}, which is what the Gateway needs in order to emit an IHE BALP {@code AuditEvent} for
  * the request (a {@code null} return here would make the Gateway skip audit logging entirely, see
  * {@code BearerAuthorizationInterceptor}). Audit logging itself is a separate, server-wide switch:
- * set the {@code AUDIT_EVENT_ACTIONS_CONFIG} environment variable to the comma-separated FHIR
- * AuditEvent action codes you want logged, e.g. {@code "C,R,U,D,E"} for
- * create/read/update/delete/execute, or a subset like {@code "C,U,D"} to only audit writes.
+ * set the {@code AUDIT_EVENT_ACTIONS_CONFIG} environment variable to the FHIR AuditEvent action
+ * codes you want logged, written together with no separator, e.g. {@code "CRUDE"} for
+ * create/read/update/delete/execute, or a subset like {@code "CUD"} to only audit writes.
+ *
+ * <p>Note an AuditEvent is written per REST request — including per entry within a Bundle
+ * (batch/transaction) — so a busy deployment, or a broad config like {@code "CRUDE"} that also
+ * covers reads and searches, can generate a large volume of AuditEvent resources quickly. Prefer a
+ * narrower config (e.g. {@code "CUD"}) unless read/search auditing is actually needed.
  */
 public class IamAccessDecision implements AccessDecision {
 
