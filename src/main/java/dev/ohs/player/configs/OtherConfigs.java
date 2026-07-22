@@ -3,6 +3,7 @@ package dev.ohs.player.configs;
 import ca.uhn.fhir.context.FhirContext;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+import com.google.fhir.gateway.interfaces.AccessCheckerFactory;
 import dev.ohs.player.auth.JwtTokenValidator;
 import dev.ohs.player.fhir.LocationHierarchy;
 import dev.ohs.player.fhir.LocationHierarchyConfig;
@@ -14,6 +15,7 @@ import dev.ohs.player.fhir.PractitionerRoleService;
 import dev.ohs.player.fhir.PractitionerService;
 import dev.ohs.player.iam.IamProviderService;
 import dev.ohs.player.iam.keycloak.KeycloakIamProvider;
+import dev.ohs.player.plugins.OhsPlayerAccessChecker;
 import java.time.Duration;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -25,6 +27,12 @@ public class OtherConfigs {
   private static final String PROXY_TO_ENV = "PROXY_TO";
   private static final String TOKEN_ISSUER_ENV = "TOKEN_ISSUER";
   private static final String IAM_PROVIDER_ENV = "IAM_PROVIDER";
+
+  @Value("${iam.provider.client-id:}")
+  private String iamProviderClientId;
+
+  @Value("${iam.provider.client-secret:}")
+  private String iamProviderClientSecret;
 
   @Bean
   @ConditionalOnMissingBean(FhirContext.class)
@@ -90,12 +98,6 @@ public class OtherConfigs {
       @Value("${location-hierarchy.max-nodes:10000}") int maxNodes) {
     return new LocationHierarchyConfig(maxPartOfBatchSize, upstreamPageSize, maxDepth, maxNodes);
   }
-
-  @Value("${iam.provider.client-id:}")
-  private String iamProviderClientId;
-
-  @Value("${iam.provider.client-secret:}")
-  private String iamProviderClientSecret;
 
   @Bean
   public JwtTokenValidator jwtTokenValidator() {
@@ -195,5 +197,11 @@ public class OtherConfigs {
       throw new IllegalStateException("PROXY_TO environment variable is not set");
     }
     return new PractitionerRoleService(fhirContext(), fhirServerUrl);
+  }
+
+  // Note, this Bean name should match the @Named of your custom Access Checker plugin factory
+  @Bean(name = "ohs_player_access")
+  public AccessCheckerFactory ohsPlayerAccessCheckerFactory() {
+    return new OhsPlayerAccessChecker.Factory(iamProviderService());
   }
 }
