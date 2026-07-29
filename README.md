@@ -1,10 +1,6 @@
 # OHS Player Reference Backend
 
-[![CI](https://github.com/ohs-foundation/ohs-player-reference-backend/actions/workflows/ci.yml/badge.svg)](https://github.com/ohs-foundation/ohs-player-reference-backend/actions/workflows/ci.yml)
-[![CodeQL](https://github.com/ohs-foundation/ohs-player-reference-backend/actions/workflows/codeql.yml/badge.svg)](https://github.com/ohs-foundation/ohs-player-reference-backend/actions/workflows/codeql.yml)
-[![codecov](https://codecov.io/gh/ohs-foundation/ohs-player-reference-backend/branch/main/graph/badge.svg)](https://codecov.io/gh/ohs-foundation/ohs-player-reference-backend)
-[![License](https://img.shields.io/github/license/ohs-foundation/ohs-player-reference-backend)](LICENSE)
-[![Dependabot](https://img.shields.io/badge/dependabot-enabled-025E8C?logo=dependabot)](https://github.com/ohs-foundation/ohs-player-reference-backend/network/updates)
+[![CI](https://github.com/ohs-foundation/ohs-player-reference-backend/actions/workflows/ci.yml/badge.svg)](https://github.com/ohs-foundation/ohs-player-reference-backend/actions/workflows/ci.yml) [![CodeQL](https://github.com/ohs-foundation/ohs-player-reference-backend/actions/workflows/codeql.yml/badge.svg)](https://github.com/ohs-foundation/ohs-player-reference-backend/actions/workflows/codeql.yml) [![codecov](https://codecov.io/gh/ohs-foundation/ohs-player-reference-backend/branch/main/graph/badge.svg)](https://codecov.io/gh/ohs-foundation/ohs-player-reference-backend) [![License](https://img.shields.io/github/license/ohs-foundation/ohs-player-reference-backend)](LICENSE) [![Dependabot](https://img.shields.io/badge/dependabot-enabled-025E8C?logo=dependabot)](https://github.com/ohs-foundation/ohs-player-reference-backend/network/updates)
 
 OHS Player backend extensions for OHS Player clients (KMP and Web). Provides custom endpoints and access checker plugins loaded into the FHIR Gateway at runtime.
 
@@ -285,6 +281,8 @@ Successful responses are cached in-process with Caffeine. The default TTL is one
 | `502` | Upstream FHIR server failure while building the hierarchy. |
 
 ## Bulk Import API
+
+All imports resolve existing resources by `identifier` (and organizations/locations by `name`) with `Cache-Control: no-cache`, so the FHIR server re-runs each lookup instead of replaying a cached result set. HAPI JPA otherwise reuses search results for `reuse_cached_search_results_millis` (60 seconds by default), which would make a resource created by one import invisible to an import that runs within that window — for example a user-assignments CSV submitted less than a minute after the user import that created the practitioners.
 
 ### Bulk User Import
 

@@ -101,15 +101,14 @@ public class PractitionerService {
         .orElse(null);
   }
 
+  /**
+   * Finds a Practitioner by identifier, bypassing the FHIR server's search-result cache. See {@link
+   * FhirIdLookup}.
+   */
   public @Nullable String findPractitionerIdByIdentifier(String system, String value) {
     IGenericClient client = fhirContext.newRestfulGenericClient(fhirServerUrl);
-    String encoded = URLEncoder.encode(system + "|" + value, StandardCharsets.UTF_8);
-    String base = fhirServerUrl.endsWith("/") ? fhirServerUrl : fhirServerUrl + "/";
-    Bundle result =
-        client.fetchResourceFromUrl(
-            Bundle.class, base + "Practitioner?identifier=" + encoded + "&_elements=id");
-    if (result.getEntry().isEmpty()) return null;
-    return result.getEntry().get(0).getResource().getIdElement().getIdPart();
+    return FhirIdLookup.findFirstId(
+        client, fhirServerUrl, "Practitioner", "identifier", system + "|" + value);
   }
 
   private String buildSearchUrl(Map<String, String[]> params) {

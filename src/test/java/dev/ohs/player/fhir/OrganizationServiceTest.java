@@ -1,5 +1,9 @@
 package dev.ohs.player.fhir;
 
+import static dev.ohs.player.fhir.SearchClientMocks.FHIR_SERVER_URL;
+import static dev.ohs.player.fhir.SearchClientMocks.bundleWith;
+import static dev.ohs.player.fhir.SearchClientMocks.emptyBundle;
+import static dev.ohs.player.fhir.SearchClientMocks.organization;
 import static org.junit.jupiter.api.Assertions.*;
 
 import org.hl7.fhir.r4.model.Address;
@@ -225,5 +229,58 @@ class OrganizationServiceTest {
     Organization org = new Organization();
 
     assertNull(service.extractSourceId(org));
+  }
+
+  // -------------------------------------------------------------------------
+  // id lookups — must bypass the server's search-result cache
+  // -------------------------------------------------------------------------
+
+  @Test
+  void findOrganizationIdByIdentifier_searchesWithNoCacheAndReturnsId() {
+    SearchClientMocks mocks = new SearchClientMocks(bundleWith(organization("42")));
+    OrganizationService lookupService = new OrganizationService(mocks.fhirContext, FHIR_SERVER_URL);
+
+    String id =
+        lookupService.findOrganizationIdByIdentifier(
+            OrganizationService.SOURCE_ID_IDENTIFIER_SYSTEM, "SRC-1");
+
+    assertEquals("42", id);
+    assertTrue(mocks.capturedCacheControl().isNoCache());
+    assertEquals(
+        FHIR_SERVER_URL
+            + "/Organization?identifier=http%3A%2F%2Fohs.dev%2Fidentifiers%2Fsource-id%7CSRC-1"
+            + "&_elements=id",
+        mocks.capturedUrl());
+  }
+
+  @Test
+  void findOrganizationIdByIdentifier_noMatch_returnsNull() {
+    SearchClientMocks mocks = new SearchClientMocks(emptyBundle());
+    OrganizationService lookupService = new OrganizationService(mocks.fhirContext, FHIR_SERVER_URL);
+
+    assertNull(
+        lookupService.findOrganizationIdByIdentifier(
+            OrganizationService.SOURCE_ID_IDENTIFIER_SYSTEM, "SRC-GONE"));
+  }
+
+  @Test
+  void findOrganizationIdByName_searchesWithNoCacheAndReturnsId() {
+    SearchClientMocks mocks = new SearchClientMocks(bundleWith(organization("7")));
+    OrganizationService lookupService = new OrganizationService(mocks.fhirContext, FHIR_SERVER_URL);
+
+    String id = lookupService.findOrganizationIdByName("Parent Org");
+
+    assertEquals("7", id);
+    assertTrue(mocks.capturedCacheControl().isNoCache());
+    assertEquals(
+        FHIR_SERVER_URL + "/Organization?name=Parent+Org&_elements=id", mocks.capturedUrl());
+  }
+
+  @Test
+  void findOrganizationIdByName_noMatch_returnsNull() {
+    SearchClientMocks mocks = new SearchClientMocks(emptyBundle());
+    OrganizationService lookupService = new OrganizationService(mocks.fhirContext, FHIR_SERVER_URL);
+
+    assertNull(lookupService.findOrganizationIdByName("Unknown Parent"));
   }
 }
