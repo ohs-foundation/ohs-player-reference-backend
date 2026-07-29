@@ -3,8 +3,6 @@ package dev.ohs.player.fhir;
 import ca.uhn.fhir.context.FhirContext;
 import ca.uhn.fhir.rest.client.api.IGenericClient;
 import java.math.BigDecimal;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import org.hl7.fhir.r4.model.Bundle;
 import org.hl7.fhir.r4.model.CodeableConcept;
 import org.hl7.fhir.r4.model.Coding;
@@ -42,26 +40,23 @@ public class LocationService {
     return client.read().resource(Location.class).withId(locationId).execute();
   }
 
+  /**
+   * Finds a Location by identifier, bypassing the FHIR server's search-result cache. See {@link
+   * FhirIdLookup}.
+   */
   public @Nullable String findLocationIdByIdentifier(String system, String value) {
     IGenericClient client = fhirContext.newRestfulGenericClient(fhirServerUrl);
-    String encoded = URLEncoder.encode(system + "|" + value, StandardCharsets.UTF_8);
-    String base = fhirServerUrl.endsWith("/") ? fhirServerUrl : fhirServerUrl + "/";
-    Bundle result =
-        client.fetchResourceFromUrl(
-            Bundle.class, base + "Location?identifier=" + encoded + "&_elements=id");
-    if (result.getEntry().isEmpty()) return null;
-    return result.getEntry().get(0).getResource().getIdElement().getIdPart();
+    return FhirIdLookup.findFirstId(
+        client, fhirServerUrl, "Location", "identifier", system + "|" + value);
   }
 
+  /**
+   * Finds a Location by name, bypassing the FHIR server's search-result cache. See {@link
+   * FhirIdLookup}.
+   */
   public @Nullable String findLocationIdByName(String name) {
     IGenericClient client = fhirContext.newRestfulGenericClient(fhirServerUrl);
-    String encoded = URLEncoder.encode(name, StandardCharsets.UTF_8);
-    String base = fhirServerUrl.endsWith("/") ? fhirServerUrl : fhirServerUrl + "/";
-    Bundle result =
-        client.fetchResourceFromUrl(
-            Bundle.class, base + "Location?name=" + encoded + "&_elements=id");
-    if (result.getEntry().isEmpty()) return null;
-    return result.getEntry().get(0).getResource().getIdElement().getIdPart();
+    return FhirIdLookup.findFirstId(client, fhirServerUrl, "Location", "name", name);
   }
 
   public Location buildLocation(LocationData data) {

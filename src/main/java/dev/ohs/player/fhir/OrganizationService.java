@@ -3,8 +3,6 @@ package dev.ohs.player.fhir;
 import ca.uhn.fhir.context.FhirContext;
 import ca.uhn.fhir.rest.api.MethodOutcome;
 import ca.uhn.fhir.rest.client.api.IGenericClient;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import org.hl7.fhir.r4.model.Address;
 import org.hl7.fhir.r4.model.Bundle;
 import org.hl7.fhir.r4.model.CodeableConcept;
@@ -71,26 +69,23 @@ public class OrganizationService {
     return client.read().resource(Organization.class).withId(orgId).execute();
   }
 
+  /**
+   * Finds an Organization by identifier, bypassing the FHIR server's search-result cache. See
+   * {@link FhirIdLookup}.
+   */
   public @Nullable String findOrganizationIdByIdentifier(String system, String value) {
     IGenericClient client = fhirContext.newRestfulGenericClient(fhirServerUrl);
-    String encoded = URLEncoder.encode(system + "|" + value, StandardCharsets.UTF_8);
-    String base = fhirServerUrl.endsWith("/") ? fhirServerUrl : fhirServerUrl + "/";
-    Bundle result =
-        client.fetchResourceFromUrl(
-            Bundle.class, base + "Organization?identifier=" + encoded + "&_elements=id");
-    if (result.getEntry().isEmpty()) return null;
-    return result.getEntry().get(0).getResource().getIdElement().getIdPart();
+    return FhirIdLookup.findFirstId(
+        client, fhirServerUrl, "Organization", "identifier", system + "|" + value);
   }
 
+  /**
+   * Finds an Organization by name, bypassing the FHIR server's search-result cache. See {@link
+   * FhirIdLookup}.
+   */
   public @Nullable String findOrganizationIdByName(String name) {
     IGenericClient client = fhirContext.newRestfulGenericClient(fhirServerUrl);
-    String encoded = URLEncoder.encode(name, StandardCharsets.UTF_8);
-    String base = fhirServerUrl.endsWith("/") ? fhirServerUrl : fhirServerUrl + "/";
-    Bundle result =
-        client.fetchResourceFromUrl(
-            Bundle.class, base + "Organization?name=" + encoded + "&_elements=id");
-    if (result.getEntry().isEmpty()) return null;
-    return result.getEntry().get(0).getResource().getIdElement().getIdPart();
+    return FhirIdLookup.findFirstId(client, fhirServerUrl, "Organization", "name", name);
   }
 
   public @Nullable String extractSourceId(Organization org) {

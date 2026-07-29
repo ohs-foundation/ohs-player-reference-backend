@@ -1,5 +1,9 @@
 package dev.ohs.player.fhir;
 
+import static dev.ohs.player.fhir.SearchClientMocks.FHIR_SERVER_URL;
+import static dev.ohs.player.fhir.SearchClientMocks.bundleWith;
+import static dev.ohs.player.fhir.SearchClientMocks.emptyBundle;
+import static dev.ohs.player.fhir.SearchClientMocks.practitioner;
 import static org.junit.jupiter.api.Assertions.*;
 
 import ca.uhn.fhir.context.FhirContext;
@@ -194,5 +198,37 @@ class PractitionerServiceTest {
         .filter(id -> system.equals(id.getSystem()))
         .findFirst()
         .orElse(null);
+  }
+
+  // -------------------------------------------------------------------------
+  // findPractitionerIdByIdentifier — must bypass the server's search-result cache
+  // -------------------------------------------------------------------------
+
+  @Test
+  void findPractitionerIdByIdentifier_searchesWithNoCacheAndReturnsId() {
+    SearchClientMocks mocks = new SearchClientMocks(bundleWith(practitioner("1097")));
+    PractitionerService lookupService = new PractitionerService(mocks.fhirContext, FHIR_SERVER_URL);
+
+    String id =
+        lookupService.findPractitionerIdByIdentifier(
+            PractitionerService.SOURCE_ID_IDENTIFIER_SYSTEM, "1");
+
+    assertEquals("1097", id);
+    assertTrue(mocks.capturedCacheControl().isNoCache());
+    assertEquals(
+        FHIR_SERVER_URL
+            + "/Practitioner?identifier=http%3A%2F%2Fohs.dev%2Fidentifiers%2Fsource-id%7C1"
+            + "&_elements=id",
+        mocks.capturedUrl());
+  }
+
+  @Test
+  void findPractitionerIdByIdentifier_noMatch_returnsNull() {
+    SearchClientMocks mocks = new SearchClientMocks(emptyBundle());
+    PractitionerService lookupService = new PractitionerService(mocks.fhirContext, FHIR_SERVER_URL);
+
+    assertNull(
+        lookupService.findPractitionerIdByIdentifier(
+            PractitionerService.SOURCE_ID_IDENTIFIER_SYSTEM, "does-not-exist"));
   }
 }

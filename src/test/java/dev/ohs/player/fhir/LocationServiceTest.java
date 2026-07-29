@@ -1,5 +1,9 @@
 package dev.ohs.player.fhir;
 
+import static dev.ohs.player.fhir.SearchClientMocks.FHIR_SERVER_URL;
+import static dev.ohs.player.fhir.SearchClientMocks.bundleWith;
+import static dev.ohs.player.fhir.SearchClientMocks.emptyBundle;
+import static dev.ohs.player.fhir.SearchClientMocks.location;
 import static org.junit.jupiter.api.Assertions.*;
 
 import org.hl7.fhir.r4.model.Location;
@@ -283,5 +287,57 @@ class LocationServiceTest {
   @Test
   void capitalizeFirst_emptyString_returnsEmpty() {
     assertEquals("", service.capitalizeFirst(""));
+  }
+
+  // -------------------------------------------------------------------------
+  // id lookups — must bypass the server's search-result cache
+  // -------------------------------------------------------------------------
+
+  @Test
+  void findLocationIdByIdentifier_searchesWithNoCacheAndReturnsId() {
+    SearchClientMocks mocks = new SearchClientMocks(bundleWith(location("55")));
+    LocationService lookupService = new LocationService(mocks.fhirContext, FHIR_SERVER_URL);
+
+    String id =
+        lookupService.findLocationIdByIdentifier(
+            LocationService.SOURCE_ID_IDENTIFIER_SYSTEM, "SRC-LOC1");
+
+    assertEquals("55", id);
+    assertTrue(mocks.capturedCacheControl().isNoCache());
+    assertEquals(
+        FHIR_SERVER_URL
+            + "/Location?identifier=http%3A%2F%2Fohs.dev%2Fidentifiers%2Fsource-id%7CSRC-LOC1"
+            + "&_elements=id",
+        mocks.capturedUrl());
+  }
+
+  @Test
+  void findLocationIdByIdentifier_noMatch_returnsNull() {
+    SearchClientMocks mocks = new SearchClientMocks(emptyBundle());
+    LocationService lookupService = new LocationService(mocks.fhirContext, FHIR_SERVER_URL);
+
+    assertNull(
+        lookupService.findLocationIdByIdentifier(
+            LocationService.SOURCE_ID_IDENTIFIER_SYSTEM, "SRC-GONE"));
+  }
+
+  @Test
+  void findLocationIdByName_searchesWithNoCacheAndReturnsId() {
+    SearchClientMocks mocks = new SearchClientMocks(bundleWith(location("9")));
+    LocationService lookupService = new LocationService(mocks.fhirContext, FHIR_SERVER_URL);
+
+    String id = lookupService.findLocationIdByName("Clinic A");
+
+    assertEquals("9", id);
+    assertTrue(mocks.capturedCacheControl().isNoCache());
+    assertEquals(FHIR_SERVER_URL + "/Location?name=Clinic+A&_elements=id", mocks.capturedUrl());
+  }
+
+  @Test
+  void findLocationIdByName_noMatch_returnsNull() {
+    SearchClientMocks mocks = new SearchClientMocks(emptyBundle());
+    LocationService lookupService = new LocationService(mocks.fhirContext, FHIR_SERVER_URL);
+
+    assertNull(lookupService.findLocationIdByName("Nowhere"));
   }
 }
