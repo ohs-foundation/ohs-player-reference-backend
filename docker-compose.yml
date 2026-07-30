@@ -1,0 +1,34 @@
+services:
+  ohs-player-backend:
+    image: ohsfoundation/ohs-player-backend:${IMAGE_TAG:-local}
+    build:
+      context: .
+      args:
+        GATEWAY_REPO: ${GATEWAY_REPO:-https://github.com/ohs-foundation/fhir-gateway.git}
+        GATEWAY_REF: ${GATEWAY_REF:-main}
+    ports:
+      - "${HOST_PORT:-8080}:8080"
+      # Uncomment together with the JAVA_OPTS debug agent in .env to attach a remote debugger.
+      #- "5005:5005"
+    env_file: .env
+    # Lets PROXY_TO / TOKEN_ISSUER reach a FHIR server or Keycloak running on the host,
+    # e.g. PROXY_TO=http://host.docker.internal:8099/fhir
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # If your FHIR server and Keycloak run in another Compose project, attach to its
+    # network instead of using host.docker.internal, then address them by service name
+    # (PROXY_TO=http://fhir:8080/fhir, TOKEN_ISSUER=http://keycloak:8080/realms/...).
+    # See "Keycloak issuer alignment" in README.md before switching.
+    # networks:
+    #   - fhir-stack
+    #
+    # The bulk import servlets stage multipart uploads in /tmp (50 MB max per file).
+    tmpfs:
+      - /tmp:size=256m
+    # Startup fails hard if Keycloak is not reachable for OIDC discovery, so retry.
+    restart: unless-stopped
+
+# networks:
+#   fhir-stack:
+#     external: true
+#     name: ohs-player-backend_default

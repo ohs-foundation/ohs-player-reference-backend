@@ -1,0 +1,32 @@
+# Build output
+target/
+**/target/
+
+# Local runtime configuration and secrets. application.properties is gitignored and holds
+# local IAM credentials; it must never be baked into a published image.
+.env
+src/main/resources/application.properties
+
+# Performance test harness working files (e.g. the local performance-tests/.venv holds macOS binaries)
+performance-tests/
+**/__pycache__/
+*.pyc
+
+# VCS and tooling
+.git/
+.github/
+.gitignore
+.idea/
+*.iml
+.vscode/
+.classpath
+.project
+.settings/
+bin/
+gen/
+
+# Developer scripts with hardcoded local paths
+test-runner.sh
+
+# OS cruft
+.DS_Store

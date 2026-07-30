@@ -45,6 +45,84 @@ See the [FHIR Gateway documentation](https://github.com/ohs-foundation/fhir-gate
 
 The plugin does not bundle FHIR Gateway classes — they are declared `provided` in `pom.xml` and supplied by the host at runtime.
 
+## Docker
+
+The `Dockerfile` builds a self-contained image running the FHIR Gateway with this plugin already on its classpath. It has three stages: the gateway jar is built from source (not fetched from Docker Hub), the plugin is built on JDK 21, and the runtime stage carries only the two jars on a JRE base.
+
+### Building
+
+```sh
+docker build -t ohsfoundation/ohs-player-backend:1.0-SNAPSHOT .
+```
+
+Pin the gateway revision for a reproducible image, and optionally build it from a fork:
+
+```sh
+docker build --build-arg GATEWAY_REF=<branch|tag|full-sha> \
+  --build-arg GATEWAY_REPO=https://github.com/<owner>/fhir-gateway.git \
+  -t ohsfoundation/ohs-player-backend:1.0-SNAPSHOT .
+```
+
+Both are also Compose build args, settable from `.env`.
+
+| Build arg | Default | Notes |
+| --- | --- | --- |
+| `GATEWAY_REPO` | `https://github.com/ohs-foundation/fhir-gateway.git` | Must be an HTTPS URL — the build stage has no SSH keys. A private repository needs a credential passed as a BuildKit secret, which this Dockerfile does not do. |
+| `GATEWAY_REF` | `main` | Branch, tag, or **full 40-character** commit SHA. Abbreviated SHAs do not resolve over the wire. Fetching an arbitrary SHA requires the host to allow it (GitHub does). |
+
+Both args form part of the gateway checkout layer's cache key, so changing either re-fetches. A branch name does not change, which means `docker compose up --build` reuses a stale checkout after the branch moves — pin a SHA or push a new tag to pick up a fork-side change. `docker compose build --no-cache` is the blunt alternative.
+
+The first build runs two full Maven builds with no shared `~/.m2` and takes several minutes. Later builds reuse the cached dependency layers unless `pom.xml` changes.
+
+### Running
+
+```sh
+cp .env.example .env   # fill in PROXY_TO, TOKEN_ISSUER, IAM_PROVIDER_CLIENT_ID, IAM_PROVIDER_CLIENT_SECRET
+docker compose up
+```
+
+Compose starts the gateway only. `PROXY_TO` (FHIR server) and `TOKEN_ISSUER` (Keycloak) must point at services you run separately; use `host.docker.internal` to reach the Docker host, for example `PROXY_TO=http://host.docker.internal:8099/fhir`.
+
+Keycloak must be reachable when the container starts — the plugin performs OIDC discovery during startup and fails fast if it cannot. The service uses `restart: unless-stopped` so it recovers once Keycloak is available.
+
+The container listens on `8080`; map a different host port with `HOST_PORT`. To attach a remote debugger, uncomment the `JAVA_OPTS` line with the JDWP agent in `.env` and the `5005:5005` mapping in `docker-compose.yml`.
+
+### Keycloak issuer alignment
+
+`TOKEN_ISSUER` serves two purposes: it is the URL used for OIDC discovery at startup, and it is the exact value the `iss` claim of every incoming token is compared against. Both must hold, which constrains how you address Keycloak from a container.
+
+Keycloak running with `start-dev` derives `iss` from the host in the request it received. A token fetched from `http://localhost:8081/realms/ohs-player` therefore carries `iss=http://localhost:8081/realms/ohs-player`, and is rejected if the container was started with `TOKEN_ISSUER=http://keycloak:8080/realms/ohs-player` — the URL a container on Keycloak's own network would otherwise use.
+
+Pick one of:
+
+- **Fix Keycloak's hostname** (preferred). Set `KC_HOSTNAME` on the Keycloak service so it always advertises one issuer regardless of the requesting host, and use that same value for `TOKEN_ISSUER`.
+- **Address Keycloak identically from host and container.** Use `TOKEN_ISSUER=http://host.docker.internal:8081/realms/<realm>` and obtain tokens from that same URL, so the issuer matches on both sides.
+
+A mismatch surfaces as a `401` on `/api/*` with a signature- or issuer-validation message in the logs, while startup itself succeeds — discovery uses the URL, the comparison uses the claim.
+
+To run the performance harness against the container, set the base URL explicitly:
+
+```sh
+BASE_URL=http://localhost:8080 BEARER_TOKEN=<token> python runners/run_all.py
+```
+
+### Publishing to Docker Hub
+
+The image tag must be `<namespace>/<repository>:<tag>` matching an account or organization you have push rights on, otherwise the push fails.
+
+```sh
+echo "$DOCKERHUB_TOKEN" | docker login -u <username> --password-stdin
+
+docker buildx build --platform linux/amd64,linux/arm64 \
+  -t ohsfoundation/ohs-player-backend:1.0-SNAPSHOT \
+  -t ohsfoundation/ohs-player-backend:latest \
+  --push .
+```
+
+Use a Docker Hub access token (Account Settings → Security), not your account password.
+
+`buildx --push` builds and publishes both architectures in one step. A plain `docker build` followed by `docker push` publishes only the architecture of the machine you built on — `arm64` on an Apple Silicon Mac, which then fails to start on `amd64` hosts. Always publish an immutable version tag alongside `latest`.
+
 ## Configuration
 
 ### Environment variables
