@@ -560,6 +560,18 @@ Authorization uses a per-resource, three-level hierarchy. Higher levels satisfy 
 
 Roles are read from the JWT claim path returned by the configured IAM provider. For Keycloak this is `realm_access.roles`. A token missing the required role receives `403 Forbidden`; a missing or invalid token receives `401 Unauthorized`.
 
+## FHIR Proxy Access Control
+
+This is separate from the `/api/*` role model above: it gates requests the Gateway forwards to the upstream FHIR store (e.g. `/fhir/*`), not this project's own servlets.
+
+Set `ACCESS_CHECKER=ohs_player_access` on the Gateway to enable `OhsPlayerAccessChecker`. It expects the configured IAM provider to issue one role per `<HTTP_VERB>_<FHIR_RESOURCE_TYPE>` combination, e.g. `GET_ENCOUNTER` to read Encounters or `DELETE_PATIENT` to delete Patients. A request is granted only if the caller's roles contain the role matching its verb and resource type; for a Bundle (batch/transaction), every entry must be individually authorized for the whole Bundle to be granted.
+
+Roles are extracted with the same `IamProviderService.extractRolesFromToken` used by the `/api/*` token validator, so this checker works unchanged with any configured IAM provider.
+
+To enable AuditEvents for these requests, set `AUDIT_EVENT_ACTIONS_CONFIG` on the Gateway to the FHIR AuditEvent action codes to log, written together with no separator (not comma-separated), e.g. `CRUDE` for all CRUD + search, or `CUD` for writes only. This is independent of the checker choice.
+
+**Note:** an AuditEvent is written per REST request — and per entry within a Bundle (batch/transaction), not just once for the whole Bundle. On a busy deployment, or with a broad config like `CRUDE` (which also covers reads and searches), this can generate AuditEvent resources quickly and grow the upstream FHIR store's storage significantly. Prefer a narrower config (e.g. `CUD` for writes only) unless you specifically need read/search auditing, and plan storage/retention for the upstream FHIR store accordingly.
+
 ---
 
 ## Keycloak Setup
