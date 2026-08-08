@@ -24,3 +24,4 @@ __pycache__/
 
 #Project
 src/main/resources/application.properties
+.env

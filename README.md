@@ -502,10 +502,11 @@ Reproduce with `python runners/run_all.py` from `performance-tests/` — see [`p
 
 | Method | Endpoint | Description |
 | --- | --- | --- |
+| `GET` | `/api/practitioner-details` | Fetch full practitioner context for the currently authenticated user (IAM id taken from the JWT) |
 | `GET` | `/api/practitioner-details?iam-id=<id>` | Fetch full practitioner context by Keycloak ID |
 | `GET` | `/api/practitioner-details?practitioner-id=<id>` | Fetch full practitioner context by FHIR Practitioner ID |
 
-**Optional query parameters:** `organisation-id`, `location-id` — filter results to PractitionerRoles that reference the given organisation or location.
+**Optional query parameters:** `organisation-id`, `location-id` — filter results to PractitionerRoles that reference the given organisation or location. These apply to all three forms above.
 
 **Response:**
 
@@ -525,9 +526,9 @@ Reproduce with `python runners/run_all.py` from `performance-tests/` — see [`p
 
 Each field is a FHIR R4 resource serialised as JSON. `organization` is `null` when the PractitionerRole has no affiliated organisation. `careTeams` contains only CareTeam resources whose `participant.member` references that specific PractitionerRole.
 
-When `iam-id` is supplied the endpoint first resolves the FHIR Practitioner ID (`Step 1`), then fetches the full context in a single FHIR call using `_include` and `_revinclude` (`Step 2`). When `practitioner-id` is supplied Step 1 is skipped.
+When `iam-id` is supplied the endpoint first resolves the FHIR Practitioner ID (`Step 1`), then fetches the full context in a single FHIR call using `_include` and `_revinclude` (`Step 2`). When `practitioner-id` is supplied Step 1 is skipped. When neither is supplied, the IAM id is extracted from the caller's JWT by the configured IAM provider (for Keycloak, the `sub` claim) and used for Step 1, i.e. the request resolves to the caller's own practitioner record.
 
-Returns `404` when no matching practitioner or roles are found, and `400` when neither `iam-id` nor `practitioner-id` is provided.
+Returns `404` when no matching practitioner or roles are found.
 
 ## Authentication & Authorization
 
@@ -555,7 +556,7 @@ Authorization uses a per-resource, three-level hierarchy. Higher levels satisfy 
 | `groups.manage` | `groups.edit` + `DELETE /api/groups/{id}`, `DELETE /api/groups/{gid}/members/{uid}`                             |
 | `bulk-import.manage` | `POST /api/bulk-import/*`                                                                          |
 | `roles.view` | `GET /api/roles`                                                                                   |
-| `practitioner-details.view` | `GET /api/practitioner-details`                                                                    |
+| `practitioner-details.view` | `GET /api/practitioner-details?iam-id=<id>`, `GET /api/practitioner-details?practitioner-id=<id>` (looking up another user's record) |
 | `location-hierarchy.view` | `GET /api/location-hierarchy/{rootId}`                                                                                 |
 
 Roles are read from the JWT claim path returned by the configured IAM provider. For Keycloak this is `realm_access.roles`. A token missing the required role receives `403 Forbidden`; a missing or invalid token receives `401 Unauthorized`.
@@ -571,6 +572,7 @@ Roles are extracted with the same `IamProviderService.extractRolesFromToken` use
 To enable AuditEvents for these requests, set `AUDIT_EVENT_ACTIONS_CONFIG` on the Gateway to the FHIR AuditEvent action codes to log, written together with no separator (not comma-separated), e.g. `CRUDE` for all CRUD + search, or `CUD` for writes only. This is independent of the checker choice.
 
 **Note:** an AuditEvent is written per REST request — and per entry within a Bundle (batch/transaction), not just once for the whole Bundle. On a busy deployment, or with a broad config like `CRUDE` (which also covers reads and searches), this can generate AuditEvent resources quickly and grow the upstream FHIR store's storage significantly. Prefer a narrower config (e.g. `CUD` for writes only) unless you specifically need read/search auditing, and plan storage/retention for the upstream FHIR store accordingly.
+`GET /api/practitioner-details` with no query parameters resolves the caller's own practitioner record from the JWT and requires only a valid token — no `practitioner-details.view` role is needed for this self-lookup form.
 
 ---
 

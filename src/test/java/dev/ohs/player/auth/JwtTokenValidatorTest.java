@@ -46,13 +46,36 @@ class JwtTokenValidatorTest {
   @Test
   void validate_ValidToken_ReturnsAuthenticatedUser() throws Exception {
     when(iamProviderService.extractRolesFromToken(any())).thenReturn(Set.of("users.manage"));
+    when(iamProviderService.extractUserIdFromToken(any())).thenReturn("keycloak-uuid-123");
 
     String token = signToken(rsaKey, ISSUER, "user-123", "alice", 60);
     AuthenticatedUser user = validator.validate(token);
 
-    assertEquals("user-123", user.getSub());
+    assertEquals("keycloak-uuid-123", user.getIamId());
     assertEquals("alice", user.getPreferredUsername());
     assertEquals(Set.of("users.manage"), user.getRoles());
+  }
+
+  @Test
+  void validate_IamProviderReturnsNullUserId_AuthenticatedUserHasNullIamId() throws Exception {
+    when(iamProviderService.extractRolesFromToken(any())).thenReturn(Set.of());
+    when(iamProviderService.extractUserIdFromToken(any())).thenReturn(null);
+
+    String token = signToken(rsaKey, ISSUER, "user-123", "alice", 60);
+    AuthenticatedUser user = validator.validate(token);
+
+    assertNull(user.getIamId());
+  }
+
+  @Test
+  void validate_DelegatesUserIdExtractionToIamProvider() throws Exception {
+    when(iamProviderService.extractRolesFromToken(any())).thenReturn(Set.of());
+    when(iamProviderService.extractUserIdFromToken(any())).thenReturn("keycloak-uuid-456");
+
+    String token = signToken(rsaKey, ISSUER, "user-789", "bob", 60);
+    validator.validate(token);
+
+    verify(iamProviderService).extractUserIdFromToken(any());
   }
 
   @Test
@@ -62,7 +85,6 @@ class JwtTokenValidatorTest {
     String token = signTokenNoUsername(rsaKey, ISSUER, "user-456", 60);
     AuthenticatedUser user = validator.validate(token);
 
-    assertEquals("user-456", user.getSub());
     assertEquals("user-456", user.getPreferredUsername());
   }
 
