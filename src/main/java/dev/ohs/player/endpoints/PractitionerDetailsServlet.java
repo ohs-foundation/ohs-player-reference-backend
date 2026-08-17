@@ -5,6 +5,7 @@ import ca.uhn.fhir.parser.IParser;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import dev.ohs.player.auth.AuthenticatedUser;
 import dev.ohs.player.auth.AuthorizationHandler;
 import dev.ohs.player.auth.RoleLevel;
 import dev.ohs.player.fhir.PractitionerDetail;
@@ -32,8 +33,13 @@ public class PractitionerDetailsServlet extends HttpServlet {
   @Override
   protected void doGet(HttpServletRequest request, HttpServletResponse response)
       throws IOException {
-    if (!AuthorizationHandler.require(request, response, "practitioner-details", RoleLevel.VIEW))
+    AuthenticatedUser user = AuthorizationHandler.getUser(request);
+    if (user == null) {
+      ServletResponseUtil.writeJsonError(
+          response, HttpServletResponse.SC_UNAUTHORIZED, "Unauthenticated request");
       return;
+    }
+
     String iamId = request.getParameter("iam-id");
     String practitionerId = request.getParameter("practitioner-id");
     String organisationId = request.getParameter("organisation-id");
@@ -41,13 +47,22 @@ public class PractitionerDetailsServlet extends HttpServlet {
 
     boolean hasIamId = iamId != null && !iamId.isBlank();
     boolean hasPractitionerId = practitionerId != null && !practitionerId.isBlank();
+    boolean explicit = hasIamId || hasPractitionerId;
 
-    if (!hasIamId && !hasPractitionerId) {
-      ServletResponseUtil.writeJsonError(
-          response,
-          HttpServletResponse.SC_BAD_REQUEST,
-          "Either 'iam-id' or 'practitioner-id' query parameter is required");
-      return;
+    if (explicit) {
+      if (!AuthorizationHandler.require(request, response, "practitioner-details", RoleLevel.VIEW))
+        return;
+    } else {
+      String selfIamId = user.getIamId();
+      if (selfIamId == null || selfIamId.isBlank()) {
+        ServletResponseUtil.writeJsonError(
+            response,
+            HttpServletResponse.SC_UNAUTHORIZED,
+            "Unable to determine the IAM id of the authenticated user");
+        return;
+      }
+      iamId = selfIamId;
+      hasIamId = true;
     }
 
     if (hasIamId) {

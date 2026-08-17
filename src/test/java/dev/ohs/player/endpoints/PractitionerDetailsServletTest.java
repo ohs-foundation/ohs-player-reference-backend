@@ -41,6 +41,7 @@ class PractitionerDetailsServletTest {
 
   private static final String IAM_ID = "keycloak-uuid-123";
   private static final String PRACTITIONER_ID = "p1";
+  private static final String SELF_IAM_ID = "user-id";
 
   @BeforeEach
   void setUp() throws Exception {
@@ -54,34 +55,7 @@ class PractitionerDetailsServletTest {
     lenient()
         .when(request.getAttribute(AuthorizationHandler.AUTH_USER_ATTRIBUTE))
         .thenReturn(
-            new AuthenticatedUser("user-id", "test-user", Set.of("practitioner-details.view")));
-  }
-
-  // -------------------------------------------------------------------------
-  // Validation — missing required params
-  // -------------------------------------------------------------------------
-
-  @Test
-  void doGet_NeitherIamIdNorPractitionerId_Returns400() throws Exception {
-    when(request.getParameter("iam-id")).thenReturn(null);
-    when(request.getParameter("practitioner-id")).thenReturn(null);
-
-    servlet.doGet(request, response);
-
-    verify(response).setStatus(HttpServletResponse.SC_BAD_REQUEST);
-    assertTrue(stringWriter.toString().contains("iam-id"));
-    verifyNoInteractions(practitionerDetailService);
-  }
-
-  @Test
-  void doGet_BlankIamId_BlankPractitionerId_Returns400() throws Exception {
-    when(request.getParameter("iam-id")).thenReturn("  ");
-    when(request.getParameter("practitioner-id")).thenReturn("  ");
-
-    servlet.doGet(request, response);
-
-    verify(response).setStatus(HttpServletResponse.SC_BAD_REQUEST);
-    verifyNoInteractions(practitionerDetailService);
+            new AuthenticatedUser(SELF_IAM_ID, "test-user", Set.of("practitioner-details.view")));
   }
 
   // -------------------------------------------------------------------------
@@ -258,7 +232,66 @@ class PractitionerDetailsServletTest {
   }
 
   // -------------------------------------------------------------------------
-  // Auth enforcement
+  // No-parameter self lookup (IAM id derived from the JWT)
+  // -------------------------------------------------------------------------
+
+  @Test
+  void doGet_NoParams_NoRoles_ResolvesFromJwtIamId_Returns200() throws Exception {
+    givenAuthenticatedUser(SELF_IAM_ID, Set.of());
+    givenNoParams();
+    when(practitionerDetailService.resolvePractitionerIdFromIamId(SELF_IAM_ID))
+        .thenReturn(PRACTITIONER_ID);
+    when(practitionerDetailService.fetchPractitionerDetail(eq(PRACTITIONER_ID), isNull(), isNull()))
+        .thenReturn(buildDetail());
+
+    servlet.doGet(request, response);
+
+    verify(practitionerDetailService).resolvePractitionerIdFromIamId(SELF_IAM_ID);
+    verify(practitionerDetailService).fetchPractitionerDetail(PRACTITIONER_ID, null, null);
+    verify(response).setStatus(HttpServletResponse.SC_OK);
+  }
+
+  @Test
+  void doGet_NoParams_OrganisationFilterOnly_NoRoles_Returns200_PassesFilter() throws Exception {
+    givenAuthenticatedUser(SELF_IAM_ID, Set.of());
+    givenNoParams();
+    when(request.getParameter("organisation-id")).thenReturn("org-1");
+    when(practitionerDetailService.resolvePractitionerIdFromIamId(SELF_IAM_ID))
+        .thenReturn(PRACTITIONER_ID);
+    when(practitionerDetailService.fetchPractitionerDetail(
+            eq(PRACTITIONER_ID), eq("org-1"), isNull()))
+        .thenReturn(buildDetail());
+
+    servlet.doGet(request, response);
+
+    verify(practitionerDetailService).fetchPractitionerDetail(PRACTITIONER_ID, "org-1", null);
+    verify(response).setStatus(HttpServletResponse.SC_OK);
+  }
+
+  @Test
+  void doGet_NoParams_IamIdNullOnUser_Returns401() throws Exception {
+    givenAuthenticatedUser(null, Set.of());
+    givenNoParams();
+
+    servlet.doGet(request, response);
+
+    verify(response).setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+    verifyNoInteractions(practitionerDetailService);
+  }
+
+  @Test
+  void doGet_NoParams_IamIdBlankOnUser_Returns401() throws Exception {
+    givenAuthenticatedUser("  ", Set.of());
+    givenNoParams();
+
+    servlet.doGet(request, response);
+
+    verify(response).setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+    verifyNoInteractions(practitionerDetailService);
+  }
+
+  // -------------------------------------------------------------------------
+  // Auth enforcement — explicit ids require practitioner-details.view
   // -------------------------------------------------------------------------
 
   @Test
@@ -271,9 +304,43 @@ class PractitionerDetailsServletTest {
     verifyNoInteractions(practitionerDetailService);
   }
 
+  @Test
+  void doGet_ExplicitIamId_NoRole_Returns403_NeverCallsDownstream() throws Exception {
+    givenAuthenticatedUser(SELF_IAM_ID, Set.of());
+    givenIamIdParam(IAM_ID);
+
+    servlet.doGet(request, response);
+
+    verify(response).setStatus(HttpServletResponse.SC_FORBIDDEN);
+    verifyNoInteractions(practitionerDetailService);
+  }
+
+  @Test
+  void doGet_ExplicitPractitionerId_NoRole_Returns403_NeverCallsDownstream() throws Exception {
+    givenAuthenticatedUser(SELF_IAM_ID, Set.of());
+    givenPractitionerIdParam(PRACTITIONER_ID);
+
+    servlet.doGet(request, response);
+
+    verify(response).setStatus(HttpServletResponse.SC_FORBIDDEN);
+    verifyNoInteractions(practitionerDetailService);
+  }
+
   // -------------------------------------------------------------------------
   // Helpers
   // -------------------------------------------------------------------------
+
+  private void givenAuthenticatedUser(String iamId, Set<String> roles) {
+    when(request.getAttribute(AuthorizationHandler.AUTH_USER_ATTRIBUTE))
+        .thenReturn(new AuthenticatedUser(iamId, "test-user", roles));
+  }
+
+  private void givenNoParams() {
+    when(request.getParameter("iam-id")).thenReturn(null);
+    when(request.getParameter("practitioner-id")).thenReturn(null);
+    lenient().when(request.getParameter("organisation-id")).thenReturn(null);
+    lenient().when(request.getParameter("location-id")).thenReturn(null);
+  }
 
   private void givenPractitionerIdParam(String practitionerId) {
     when(request.getParameter("iam-id")).thenReturn(null);
