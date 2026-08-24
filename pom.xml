@@ -15,7 +15,7 @@
         <caffeine.version>3.2.4</caffeine.version>
         <lombok.version>1.18.46</lombok.version>
         <error-prone.version>2.50.0</error-prone.version>
-        <nullaway.version>0.13.7</nullaway.version>
+        <nullaway.version>0.13.8</nullaway.version>
         <jacoco.version>0.8.15</jacoco.version>
         <jspecify.version>1.0.1</jspecify.version>
     </properties>
