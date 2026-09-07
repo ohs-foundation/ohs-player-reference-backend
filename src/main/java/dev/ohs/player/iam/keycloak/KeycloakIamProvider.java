@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+import org.jspecify.annotations.Nullable;
 import org.keycloak.OAuth2Constants;
 import org.keycloak.admin.client.Keycloak;
 import org.keycloak.admin.client.KeycloakBuilder;
@@ -288,6 +289,17 @@ public class KeycloakIamProvider implements IamProviderService {
       }
     }
     return roles;
+  }
+
+  /**
+   * Keycloak issues the user id as the {@code sub} claim. If a realm is configured to expose the id
+   * under a different claim (for example via a protocol mapper), change the claim name read here —
+   * callers depend only on {@link IamProviderService#extractUserIdFromToken}, not on {@code sub}.
+   */
+  @Override
+  public @Nullable String extractUserIdFromToken(Map<String, Object> claims) {
+    Object sub = claims.get("sub");
+    return sub instanceof String ? (String) sub : null;
   }
 
   // --- Private helpers ---

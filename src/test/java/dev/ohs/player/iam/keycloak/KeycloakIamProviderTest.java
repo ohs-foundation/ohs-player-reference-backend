@@ -692,4 +692,56 @@ class KeycloakIamProviderTest {
       return claims;
     }
   }
+
+  // -------------------------------------------------------------------------
+  // Token user id extraction — pure map parsing, no Keycloak dependency
+  // -------------------------------------------------------------------------
+
+  @Nested
+  class ExtractUserId {
+
+    private KeycloakIamProvider provider;
+
+    @BeforeEach
+    void setUp() {
+      provider = new KeycloakIamProvider(SERVER_URL, REALM, CLIENT_ID, CLIENT_SECRET);
+    }
+
+    @Test
+    void extractUserId_SubPresentAsString_ReturnsSub() {
+      Map<String, Object> claims = new HashMap<>();
+      claims.put("sub", "keycloak-uuid-123");
+
+      String userId = provider.extractUserIdFromToken(claims);
+
+      assertEquals("keycloak-uuid-123", userId);
+    }
+
+    @Test
+    void extractUserId_SubAbsent_ReturnsNull() {
+      Map<String, Object> claims = new HashMap<>();
+      claims.put("preferred_username", "alice");
+
+      String userId = provider.extractUserIdFromToken(claims);
+
+      assertNull(userId);
+    }
+
+    @Test
+    void extractUserId_SubNotAString_ReturnsNull() {
+      Map<String, Object> claims = new HashMap<>();
+      claims.put("sub", 12345);
+
+      String userId = provider.extractUserIdFromToken(claims);
+
+      assertNull(userId);
+    }
+
+    @Test
+    void extractUserId_EmptyClaims_ReturnsNull() {
+      String userId = provider.extractUserIdFromToken(Collections.emptyMap());
+
+      assertNull(userId);
+    }
+  }
 }

@@ -111,6 +111,7 @@ public class JwtTokenValidator {
     String sub = claims.getSubject();
     String preferredUsername = claims.getStringClaim("preferred_username");
     Set<String> roles = iamProviderService.extractRolesFromToken(claims.getClaims());
-    return new AuthenticatedUser(sub, preferredUsername != null ? preferredUsername : sub, roles);
+    String iamId = iamProviderService.extractUserIdFromToken(claims.getClaims());
+    return new AuthenticatedUser(iamId, preferredUsername != null ? preferredUsername : sub, roles);
   }
 }
