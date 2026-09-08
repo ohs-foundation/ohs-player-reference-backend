@@ -34,7 +34,18 @@ Violations will fail the build with compiler errors indicating the rule and loca
 
 ## Deploying
 
-Load the plugin into the FHIR Gateway via `-Dloader.path`:
+The plugin ships as a container image with the gateway already inside it, at
+`ghcr.io/ohs-foundation/ohs-player-gateway`. Every push to `main` publishes a `main` tag
+and every build publishes a `sha-<short commit>` tag. A `v1.2.3` git tag publishes `1.2.3`,
+`1.2` and `latest`, and a prerelease tag such as `v1.2.3-rc.1` publishes its own version
+without moving `latest`.
+Pin a `sha-` or version tag rather than `main` for anything that needs to be reproducible.
+
+The image is the published gateway base plus this plugin copied into `/app/plugins`, so
+its configuration is the gateway's. The `FROM` tag in `Dockerfile` must equal the
+`com.google.fhir.gateway:server` version in `pom.xml`, so bump both in one commit.
+
+To run the jar against a gateway outside a container, load it via `-Dloader.path`:
 
 ```sh
 java -Dloader.path="PATH_TO_PLUGIN/ohs-player-backend-extensions-1.0-SNAPSHOT.jar" \
