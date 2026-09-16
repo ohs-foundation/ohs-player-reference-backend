@@ -156,7 +156,7 @@ public class OhsPlayerAccessChecker implements AccessChecker {
    * dev.ohs.player.auth.JwtTokenValidator} obtains claims from a (Nimbus-parsed) token for the
    * {@code /api/*} endpoints.
    */
-  private static Map<String, Object> extractClaims(DecodedJWT jwt) {
+  static Map<String, Object> extractClaims(DecodedJWT jwt) {
     try {
       byte[] payloadJson = Base64.getUrlDecoder().decode(jwt.getPayload());
       return OBJECT_MAPPER.readValue(payloadJson, new TypeReference<Map<String, Object>>() {});

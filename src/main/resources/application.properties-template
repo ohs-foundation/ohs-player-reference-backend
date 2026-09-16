@@ -21,3 +21,8 @@ location-hierarchy.max-nodes=10000
 location-hierarchy.cache-ttl-seconds=86400
 # Maximum total cached Location nodes across all hierarchy responses in this JVM
 location-hierarchy.cache-max-total-nodes=100000
+
+# Organization.partOf levels included below a practitioner's own organizations (org_scoped_access)
+org-scope.hierarchy-max-depth=10
+# Maximum organizations in one user's expanded scope; a larger scope denies the user (org_scoped_access)
+org-scope.hierarchy-max-organizations=2000
