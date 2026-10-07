@@ -75,6 +75,17 @@ class OhsPlayerAccessCheckerTest {
           + "{ \"method\": \"DELETE\", \"url\": \"Observation/456\" } } ]"
           + "}";
 
+  private static final String BUNDLE_PATCH_PATIENT =
+      "{"
+          + "\"resourceType\": \"Bundle\","
+          + "\"type\": \"transaction\","
+          + "\"entry\": [ {"
+          + "  \"resource\": { \"resourceType\": \"Binary\","
+          + "    \"contentType\": \"application/json-patch+json\", \"data\": \"W10=\" },"
+          + "  \"request\": { \"method\": \"PATCH\", \"url\": \"Patient/123\" }"
+          + "} ]"
+          + "}";
+
   @Mock private IamProviderService iamProviderService;
   @Mock private RequestDetailsReader requestMock;
 
@@ -148,6 +159,21 @@ class OhsPlayerAccessCheckerTest {
     setUpBundleRequest(BUNDLE_POST_PATIENT_CREATE);
     AccessChecker checker = createCheckerWithRoles("POST_PATIENT");
     assertTrue(checker.checkAccess(requestMock).canAccess());
+  }
+
+  @Test
+  void checkAccess_BundlePatchEntryUsesUrlTypeNotBinaryBody_Grants() {
+    // A JSON Patch entry carries a Binary; the role must come from the URL's type.
+    setUpBundleRequest(BUNDLE_PATCH_PATIENT);
+    AccessChecker checker = createCheckerWithRoles("PATCH_PATIENT");
+    assertTrue(checker.checkAccess(requestMock).canAccess());
+  }
+
+  @Test
+  void checkAccess_BundlePatchEntryWithOnlyBinaryRole_Denies() {
+    setUpBundleRequest(BUNDLE_PATCH_PATIENT);
+    AccessChecker checker = createCheckerWithRoles("PATCH_BINARY");
+    assertFalse(checker.checkAccess(requestMock).canAccess());
   }
 
   @Test

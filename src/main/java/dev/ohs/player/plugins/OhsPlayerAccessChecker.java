@@ -110,10 +110,13 @@ public class OhsPlayerAccessChecker implements AccessChecker {
     }
     RequestTypeEnum verb = RequestTypeEnum.valueOf(entryRequest.getMethod().name());
 
-    // For entries that carry a resource body (typically POST/PUT/PATCH) the resource type is read
+    // For entries that carry a resource body (typically POST/PUT) the resource type is read
     // straight from the body; this is the only reliable source for a plain "POST /Patient" create,
-    // whose URL has no resource id to parse a reference out of.
-    if (entry.hasResource() && entry.getResource().getResourceType() != null) {
+    // whose URL has no resource id to parse a reference out of. A PATCH body is the patch itself
+    // (a Binary for JSON Patch, Parameters for FHIRPath Patch), so its type comes from the URL.
+    if (verb != RequestTypeEnum.PATCH
+        && entry.hasResource()
+        && entry.getResource().getResourceType() != null) {
       return hasRequiredRole(verb, entry.getResource().getResourceType().name());
     }
     if (Strings.isNullOrEmpty(entryRequest.getUrl())) {
@@ -156,7 +159,7 @@ public class OhsPlayerAccessChecker implements AccessChecker {
    * dev.ohs.player.auth.JwtTokenValidator} obtains claims from a (Nimbus-parsed) token for the
    * {@code /api/*} endpoints.
    */
-  private static Map<String, Object> extractClaims(DecodedJWT jwt) {
+  static Map<String, Object> extractClaims(DecodedJWT jwt) {
     try {
       byte[] payloadJson = Base64.getUrlDecoder().decode(jwt.getPayload());
       return OBJECT_MAPPER.readValue(payloadJson, new TypeReference<Map<String, Object>>() {});

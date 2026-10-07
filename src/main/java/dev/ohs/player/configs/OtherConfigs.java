@@ -9,13 +9,18 @@ import dev.ohs.player.fhir.LocationHierarchy;
 import dev.ohs.player.fhir.LocationHierarchyConfig;
 import dev.ohs.player.fhir.LocationHierarchyService;
 import dev.ohs.player.fhir.LocationService;
+import dev.ohs.player.fhir.OrgScope;
+import dev.ohs.player.fhir.OrgScopeService;
+import dev.ohs.player.fhir.OrganizationScopeExpander;
 import dev.ohs.player.fhir.OrganizationService;
+import dev.ohs.player.fhir.PartOfOrganizationScopeExpander;
 import dev.ohs.player.fhir.PractitionerDetailService;
 import dev.ohs.player.fhir.PractitionerRoleService;
 import dev.ohs.player.fhir.PractitionerService;
 import dev.ohs.player.iam.IamProviderService;
 import dev.ohs.player.iam.keycloak.KeycloakIamProvider;
 import dev.ohs.player.plugins.OhsPlayerAccessChecker;
+import dev.ohs.player.plugins.OrgScopedAccessChecker;
 import java.time.Duration;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -27,6 +32,16 @@ public class OtherConfigs {
   private static final String PROXY_TO_ENV = "PROXY_TO";
   private static final String TOKEN_ISSUER_ENV = "TOKEN_ISSUER";
   private static final String IAM_PROVIDER_ENV = "IAM_PROVIDER";
+
+  /**
+   * How long a resolved organization scope is reused before it is looked up again.
+   *
+   * <p><b>Extension point — scope cache.</b> The TTL and size are constants to keep configuration
+   * small. Read them with {@code @Value} in {@link #orgScopeCache()} to make them settable.
+   */
+  static final Duration ORG_SCOPE_CACHE_TTL = Duration.ofMinutes(5);
+
+  static final long ORG_SCOPE_CACHE_MAX_ENTRIES = 10_000;
 
   @Value("${iam.provider.client-id:}")
   private String iamProviderClientId;
@@ -203,5 +218,37 @@ public class OtherConfigs {
   @Bean(name = "ohs_player_access")
   public AccessCheckerFactory ohsPlayerAccessCheckerFactory() {
     return new OhsPlayerAccessChecker.Factory(iamProviderService());
+  }
+
+  /** Organization scopes by IAM user id, shared across requests. */
+  @Bean
+  public Cache<String, OrgScope> orgScopeCache() {
+    return Caffeine.newBuilder()
+        .expireAfterWrite(ORG_SCOPE_CACHE_TTL)
+        .maximumSize(ORG_SCOPE_CACHE_MAX_ENTRIES)
+        .build();
+  }
+
+  /**
+   * Follows {@code Organization.partOf} to include descendant organizations. Return {@link
+   * OrganizationScopeExpander#DIRECT_ONLY} instead to scope users to their own organizations only.
+   */
+  @Bean
+  public OrganizationScopeExpander organizationScopeExpander(
+      @Value("${org-scope.hierarchy-max-depth:10}") int maxDepth,
+      @Value("${org-scope.hierarchy-max-organizations:2000}") int maxOrganizations) {
+    return new PartOfOrganizationScopeExpander(maxDepth, maxOrganizations);
+  }
+
+  @Bean
+  public OrgScopeService orgScopeService(
+      Cache<String, OrgScope> orgScopeCache, OrganizationScopeExpander organizationScopeExpander) {
+    return new OrgScopeService(orgScopeCache, organizationScopeExpander);
+  }
+
+  // Selected with ACCESS_CHECKER=org_scoped_access; the name matches the factory's @Named.
+  @Bean(name = "org_scoped_access")
+  public AccessCheckerFactory orgScopedAccessCheckerFactory(OrgScopeService orgScopeService) {
+    return new OrgScopedAccessChecker.Factory(iamProviderService(), orgScopeService);
   }
 }
