@@ -3,6 +3,7 @@ package dev.ohs.player.fhir;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -17,6 +18,8 @@ import com.github.benmanes.caffeine.cache.Caffeine;
 import java.util.List;
 import java.util.Set;
 import org.hl7.fhir.r4.model.Bundle;
+import org.hl7.fhir.r4.model.Encounter;
+import org.hl7.fhir.r4.model.OperationOutcome;
 import org.hl7.fhir.r4.model.Patient;
 import org.hl7.fhir.r4.model.Practitioner;
 import org.hl7.fhir.r4.model.PractitionerRole;
@@ -137,6 +140,41 @@ class OrgScopeServiceTest {
   void existsInScope_EmptyScope_ReturnsFalseWithoutProbe() {
     assertFalse(
         service.existsInScope("Patient", "p-1", "organization", OrgScope.denyAll(), search));
+    verifyNoInteractions(search);
+  }
+
+  @Test
+  void findInScope_ReturnsFullResourceFromScopedProbe() {
+    Encounter encounter = new Encounter();
+    encounter.setId("enc-1");
+    when(search.search("Encounter?_id=enc-1&patient.organization=Organization%2Fa&_count=1"))
+        .thenReturn(bundleOf(encounter));
+
+    assertSame(
+        encounter,
+        service.findInScope(
+            "Encounter", "enc-1", "patient.organization", OrgScope.of(Set.of("a")), search));
+  }
+
+  @Test
+  void findInScope_NoMatch_ReturnsNull() {
+    when(search.search(anyString())).thenReturn(new Bundle());
+
+    assertNull(
+        service.findInScope("Patient", "p-1", "organization", OrgScope.of(Set.of("a")), search));
+  }
+
+  @Test
+  void findInScope_EntryOfOtherType_ReturnsNull() {
+    when(search.search(anyString())).thenReturn(bundleOf(new OperationOutcome()));
+
+    assertNull(
+        service.findInScope("Patient", "p-1", "organization", OrgScope.of(Set.of("a")), search));
+  }
+
+  @Test
+  void findInScope_EmptyScope_ReturnsNullWithoutProbe() {
+    assertNull(service.findInScope("Patient", "p-1", "organization", OrgScope.denyAll(), search));
     verifyNoInteractions(search);
   }
 

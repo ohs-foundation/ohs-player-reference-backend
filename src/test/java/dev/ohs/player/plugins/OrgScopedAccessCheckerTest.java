@@ -33,10 +33,12 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.hl7.fhir.r4.model.Binary;
 import org.hl7.fhir.r4.model.Bundle;
 import org.hl7.fhir.r4.model.Encounter;
 import org.hl7.fhir.r4.model.IdType;
 import org.hl7.fhir.r4.model.Observation;
+import org.hl7.fhir.r4.model.Parameters;
 import org.hl7.fhir.r4.model.Patient;
 import org.hl7.fhir.r4.model.Reference;
 import org.hl7.fhir.r4.model.Resource;
@@ -315,14 +317,120 @@ class OrgScopedAccessCheckerTest {
     assertDenied(checker(SCOPE_A).checkAccess(request), DenyReason.UNSUPPORTED);
   }
 
-  // ---- Unsupported interactions ----
+  // ---- Patches ----
 
   @Test
-  void checkAccess_Patch_DeniesWithUnsupported() {
+  void checkAccess_PatchEncounterInScope_Grants() {
+    givenRequest(RequestTypeEnum.PATCH, "Encounter", "enc-a", null);
+    givenJsonPatch("[{\"op\":\"replace\",\"path\":\"/status\",\"value\":\"finished\"}]");
+    givenExisting("Encounter", "enc-a", "patient.organization", encounterFor("Patient/p-a"));
+    givenInScope("Patient", "p-a", "organization", true);
+
+    assertGranted(checker(SCOPE_A).checkAccess(request));
+  }
+
+  @Test
+  void checkAccess_PatchMovingEncounterToOutOfScopePatient_Denies() {
+    givenRequest(RequestTypeEnum.PATCH, "Encounter", "enc-a", null);
+    givenJsonPatch(
+        "[{\"op\":\"replace\",\"path\":\"/subject/reference\",\"value\":\"Patient/p-b\"}]");
+    givenExisting("Encounter", "enc-a", "patient.organization", encounterFor("Patient/p-a"));
+    givenInScope("Patient", "p-a", "organization", true);
+    givenInScope("Patient", "p-b", "organization", false);
+
+    assertDenied(checker(SCOPE_A).checkAccess(request), DenyReason.OUT_OF_SCOPE);
+  }
+
+  @Test
+  void checkAccess_PatchRemovingPatientReference_DeniesWithNoPatientReference() {
+    givenRequest(RequestTypeEnum.PATCH, "Encounter", "enc-a", null);
+    givenJsonPatch("[{\"op\":\"remove\",\"path\":\"/subject\"}]");
+    givenExisting("Encounter", "enc-a", "patient.organization", encounterFor("Patient/p-a"));
+
+    assertDenied(checker(SCOPE_A).checkAccess(request), DenyReason.NO_PATIENT_REFERENCE);
+  }
+
+  @Test
+  void checkAccess_PatchPatientDemographics_Grants() {
     givenRequest(RequestTypeEnum.PATCH, "Patient", "p-a", null);
+    givenJsonPatch("[{\"op\":\"add\",\"path\":\"/gender\",\"value\":\"female\"}]");
+    givenExisting("Patient", "p-a", "organization", patientManagedBy("org-a"));
+
+    assertGranted(checker(SCOPE_A).checkAccess(request));
+  }
+
+  @Test
+  void checkAccess_PatchMovingPatientToOtherOrganization_Denies() {
+    givenRequest(RequestTypeEnum.PATCH, "Patient", "p-a", null);
+    givenJsonPatch(
+        "[{\"op\":\"replace\",\"path\":\"/managingOrganization/reference\","
+            + "\"value\":\"Organization/org-b\"}]");
+    givenExisting("Patient", "p-a", "organization", patientManagedBy("org-a"));
+
+    assertDenied(checker(SCOPE_A).checkAccess(request), DenyReason.OUT_OF_SCOPE);
+  }
+
+  @Test
+  void checkAccess_PatchOfResourceOutsideScope_DeniesWithOutOfScope() {
+    givenRequest(RequestTypeEnum.PATCH, "Patient", "p-b", null);
+    givenJsonPatch("[{\"op\":\"add\",\"path\":\"/gender\",\"value\":\"female\"}]");
+
+    assertDenied(checker(SCOPE_A).checkAccess(request), DenyReason.OUT_OF_SCOPE);
+  }
+
+  @Test
+  void checkAccess_PatchThatCannotBeApplied_DeniesWithInvalidPatch() {
+    givenRequest(RequestTypeEnum.PATCH, "Patient", "p-a", null);
+    givenJsonPatch("[{\"op\":\"remove\",\"path\":\"/birthDate\"}]");
+    givenExisting("Patient", "p-a", "organization", patientManagedBy("org-a"));
+
+    assertDenied(checker(SCOPE_A).checkAccess(request), DenyReason.INVALID_PATCH);
+  }
+
+  @Test
+  void checkAccess_PatchUnscopedType_GrantsWithoutFetch() {
+    givenRequest(RequestTypeEnum.PATCH, "Practitioner", "pr-1", null);
+    givenJsonPatch("[{\"op\":\"add\",\"path\":\"/active\",\"value\":true}]");
+
+    assertGranted(checker(SCOPE_A).checkAccess(request));
+    verify(scopeService, never()).findInScope(any(), any(), any(), any(), any());
+  }
+
+  @Test
+  void checkAccess_PatchRule4Type_DeniesWithTypeNotScopable() {
+    givenRequest(RequestTypeEnum.PATCH, "Group", "g-1", null);
+    givenJsonPatch("[{\"op\":\"add\",\"path\":\"/active\",\"value\":true}]");
+
+    assertDenied(checker(SCOPE_A).checkAccess(request), DenyReason.TYPE_NOT_SCOPABLE);
+  }
+
+  @Test
+  void checkAccess_FhirPathPatch_DeniesWithUnsupported() {
+    givenRequest(RequestTypeEnum.PATCH, "Patient", "p-a", null);
+    when(request.getHeader("Content-Type")).thenReturn("application/fhir+json");
 
     assertDenied(checker(SCOPE_A).checkAccess(request), DenyReason.UNSUPPORTED);
   }
+
+  @Test
+  void checkAccess_ConditionalPatch_DeniesWithUnsupported() {
+    givenRequest(RequestTypeEnum.PATCH, "Patient", null, null);
+    givenJsonPatch("[{\"op\":\"add\",\"path\":\"/gender\",\"value\":\"female\"}]");
+
+    assertDenied(checker(SCOPE_A).checkAccess(request), DenyReason.UNSUPPORTED);
+  }
+
+  @Test
+  void checkAccess_PatchFetchFailsUpstream_DeniesWithUpstreamFailure() {
+    givenRequest(RequestTypeEnum.PATCH, "Patient", "p-a", null);
+    givenJsonPatch("[{\"op\":\"add\",\"path\":\"/gender\",\"value\":\"female\"}]");
+    when(scopeService.findInScope(any(), any(), any(), any(), any()))
+        .thenThrow(new GatewayFhirSearch.UpstreamException("down"));
+
+    assertDenied(checker(SCOPE_A).checkAccess(request), DenyReason.UPSTREAM_FAILURE);
+  }
+
+  // ---- Unsupported interactions ----
 
   @Test
   void checkAccess_Operation_DeniesWithUnsupported() {
@@ -422,6 +530,66 @@ class OrgScopedAccessCheckerTest {
     assertDenied(checker(SCOPE_A).checkAccess(request), DenyReason.UNSUPPORTED);
   }
 
+  @Test
+  void checkAccess_BundleJsonPatchEntryInScope_Grants() {
+    Bundle bundle = transaction();
+    addPatchEntry(
+        bundle,
+        "Encounter/enc-a",
+        jsonPatchBinary("[{\"op\":\"replace\",\"path\":\"/status\",\"value\":\"finished\"}]"));
+    givenBundle(bundle);
+    givenExisting("Encounter", "enc-a", "patient.organization", encounterFor("Patient/p-a"));
+    givenInScope("Patient", "p-a", "organization", true);
+
+    assertGranted(checker(SCOPE_A).checkAccess(request));
+  }
+
+  @Test
+  void checkAccess_BundleJsonPatchEntryMovingToOutOfScopePatient_Denies() {
+    Bundle bundle = transaction();
+    addPatchEntry(
+        bundle,
+        "Encounter/enc-a",
+        jsonPatchBinary(
+            "[{\"op\":\"replace\",\"path\":\"/subject/reference\",\"value\":\"Patient/p-b\"}]"));
+    givenBundle(bundle);
+    givenExisting("Encounter", "enc-a", "patient.organization", encounterFor("Patient/p-a"));
+    givenInScope("Patient", "p-b", "organization", false);
+
+    assertDenied(checker(SCOPE_A).checkAccess(request), DenyReason.OUT_OF_SCOPE);
+  }
+
+  @Test
+  void checkAccess_BundleFhirPathPatchEntry_DeniesWithUnsupported() {
+    Bundle bundle = transaction();
+    addPatchEntry(bundle, "Patient/p-a", new Parameters());
+    givenBundle(bundle);
+
+    assertDenied(checker(SCOPE_A).checkAccess(request), DenyReason.UNSUPPORTED);
+  }
+
+  @Test
+  void checkAccess_BundlePatchOfResourceAlsoWrittenByAnotherEntry_DeniesWithUnsupported() {
+    Encounter replacement = encounterFor("Patient/p-a");
+    Bundle bundle = transaction();
+    bundle
+        .addEntry()
+        .setResource(replacement)
+        .getRequest()
+        .setMethod(Bundle.HTTPVerb.PUT)
+        .setUrl("Encounter/enc-a");
+    addPatchEntry(
+        bundle,
+        "Encounter/enc-a",
+        jsonPatchBinary("[{\"op\":\"replace\",\"path\":\"/status\",\"value\":\"finished\"}]"));
+    givenBundle(bundle);
+    givenExisting("Encounter", "enc-a", "patient.organization", encounterFor("Patient/p-a"));
+    givenInScope("Encounter", "enc-a", "patient.organization", true);
+    givenInScope("Patient", "p-a", "organization", true);
+
+    assertDenied(checker(SCOPE_A).checkAccess(request), DenyReason.UNSUPPORTED);
+  }
+
   // ---- Audit ----
 
   @Test
@@ -493,6 +661,28 @@ class OrgScopedAccessCheckerTest {
   private void givenInScope(String type, String id, String param, boolean inScope) {
     when(scopeService.existsInScope(eq(type), eq(id), eq(param), any(), eq(search)))
         .thenReturn(inScope);
+  }
+
+  private void givenJsonPatch(String patch) {
+    when(request.getHeader("Content-Type")).thenReturn("application/json-patch+json");
+    when(request.getCharset()).thenReturn(StandardCharsets.UTF_8);
+    when(request.loadRequestContents()).thenReturn(patch.getBytes(StandardCharsets.UTF_8));
+  }
+
+  private void givenExisting(String type, String id, String param, Resource resource) {
+    resource.setId(type + "/" + id);
+    when(scopeService.findInScope(eq(type), eq(id), eq(param), any(), eq(search)))
+        .thenReturn(resource);
+  }
+
+  private static void addPatchEntry(Bundle bundle, String url, Resource body) {
+    bundle.addEntry().setResource(body).getRequest().setMethod(Bundle.HTTPVerb.PATCH).setUrl(url);
+  }
+
+  private static Binary jsonPatchBinary(String patch) {
+    return new Binary()
+        .setContentType("application/json-patch+json")
+        .setData(patch.getBytes(StandardCharsets.UTF_8));
   }
 
   private static Bundle transaction() {

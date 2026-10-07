@@ -606,12 +606,13 @@ A user with the `ORG_SCOPE_EXEMPT` role bypasses organization scoping, but still
 | Read, vread, instance history, delete by id | Allowed if the resource is in scope. vread and history are checked against the current version. |
 | Create (`POST /Patient`, `POST /Encounter`, ...) | A Patient's `managingOrganization` must be in scope. A compartment resource must reference at least one Patient, and every Patient it references must be in scope. |
 | Update (`PUT /Type/id`) | As create. The existing resource must also be in scope, unless the update creates it. |
+| JSON Patch (`PATCH /Type/id`, `Content-Type: application/json-patch+json`) | The existing resource must be in scope, and the patched resource must pass the create rule. In a Bundle the patch is a `Binary` entry; it is denied if another entry targets the same resource. Callers need `PATCH_<TYPE>` roles. |
 | Transaction and batch Bundles | Every entry must be allowed. A Patient created earlier in the same Bundle (including via a `urn:uuid:` fullUrl) counts as in scope for later entries. |
 | Shared reference data (Practitioner, ValueSet, CodeSystem, ConceptMap, Questionnaire, StructureDefinition, SearchParameter, CapabilityStatement, OperationDefinition, NamingSystem, Medication, Substance) | Not scoped. |
 
 **Limitations.** These requests are denied:
 
-- PATCH and `$operations` (including `$everything`).
+- FHIRPath Patch, conditional PATCH and `$operations` (including `$everything`).
 - `POST _search`, type-level history and system-level requests.
 - Searches inside Bundles.
 - Writes to Organization, Location and other organization-scoped types.

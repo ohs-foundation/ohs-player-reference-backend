@@ -1,6 +1,7 @@
 package dev.ohs.player.plugins;
 
 import ca.uhn.fhir.context.FhirContext;
+import ca.uhn.fhir.jpa.patch.JsonPatchUtils;
 import ca.uhn.fhir.parser.DataFormatException;
 import ca.uhn.fhir.rest.api.RequestTypeEnum;
 import ca.uhn.fhir.rest.server.exceptions.AuthenticationException;
@@ -20,6 +21,8 @@ import dev.ohs.player.fhir.OrgScope;
 import dev.ohs.player.fhir.OrgScopeService;
 import dev.ohs.player.iam.IamProviderService;
 import dev.ohs.player.plugins.OrgScopeRules.ScopeParam;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -32,6 +35,7 @@ import java.util.Set;
 import javax.inject.Named;
 import org.hl7.fhir.instance.model.api.IBaseResource;
 import org.hl7.fhir.instance.model.api.IIdType;
+import org.hl7.fhir.r4.model.Binary;
 import org.hl7.fhir.r4.model.Bundle;
 import org.hl7.fhir.r4.model.DomainResource;
 import org.hl7.fhir.r4.model.IdType;
@@ -61,8 +65,11 @@ import org.springframework.beans.factory.annotation.Autowired;
  *   <li>Create: allowed if the new resource is in scope (a Patient's managing organization, or the
  *       Patient a compartment resource references).
  *   <li>Update by id: as create, and the existing resource (if any) must also be in scope.
+ *   <li>JSON Patch by id (as sent by the Android FHIR SDK): the existing resource must be in scope,
+ *       and the patched result must pass the create rule. FHIRPath Patch is denied.
  *   <li>Transaction and batch Bundles of the above, except searches. A Patient created earlier in
- *       the same Bundle counts as in scope for later entries.
+ *       the same Bundle counts as in scope for later entries. A PATCH entry carries its patch in a
+ *       {@code Binary}, and is denied if another entry targets the same resource.
  * </ul>
  *
  * <p>Everything else is denied. Each denial names an extension point:
@@ -73,8 +80,6 @@ import org.springframework.beans.factory.annotation.Autowired;
  *       could be allowed through an allow-list plus the read-by-id check on the instance id.
  *   <li><b>Extension point — Bundle searches.</b> A request mutation only changes the top-level
  *       query, never a Bundle body, so searches inside Bundles are denied.
- *   <li><b>Extension point — PATCH.</b> Apply the patch in memory to the current resource, then run
- *       the body rule on the result.
  *   <li><b>Extension point — organization-anchored writes.</b> Writes to Organization, Location and
  *       other types scoped by {@code organization} are denied. Add a per-type map of the element
  *       that anchors each type to an organization, e.g. {@code Location.managingOrganization}.
@@ -94,6 +99,8 @@ public class OrgScopedAccessChecker implements AccessChecker {
   private static final String PATIENT = "Patient";
   private static final String ORGANIZATION = "Organization";
   private static final String HISTORY = "_history";
+  private static final String CONTENT_TYPE = "Content-Type";
+  private static final String JSON_PATCH_MEDIA_TYPE = "application/json-patch+json";
 
   /** Why a request was denied; logged, and exposed to tests. */
   enum DenyReason {
@@ -103,6 +110,7 @@ public class OrgScopedAccessChecker implements AccessChecker {
     TYPE_NOT_SCOPABLE,
     OUT_OF_SCOPE,
     NO_PATIENT_REFERENCE,
+    INVALID_PATCH,
     UPSTREAM_FAILURE
   }
 
@@ -113,6 +121,7 @@ public class OrgScopedAccessChecker implements AccessChecker {
     BY_ID,
     CREATE,
     UPDATE,
+    PATCH,
     UNSUPPORTED
   }
 
@@ -122,6 +131,10 @@ public class OrgScopedAccessChecker implements AccessChecker {
     final @Nullable String type;
     final @Nullable String id;
     final @Nullable Resource body;
+
+    /** The JSON Patch document of a {@link Kind#PATCH} target. */
+    final @Nullable String patch;
+
     final String description;
 
     Target(
@@ -130,15 +143,34 @@ public class OrgScopedAccessChecker implements AccessChecker {
         @Nullable String id,
         @Nullable Resource body,
         String description) {
+      this(kind, type, id, body, null, description);
+    }
+
+    private Target(
+        Kind kind,
+        @Nullable String type,
+        @Nullable String id,
+        @Nullable Resource body,
+        @Nullable String patch,
+        String description) {
       this.kind = kind;
       this.type = type;
       this.id = id;
       this.body = body;
+      this.patch = patch;
       this.description = description;
     }
 
     static Target unsupported(String description) {
       return new Target(Kind.UNSUPPORTED, null, null, null, description);
+    }
+
+    /** A JSON Patch of {@code type/id}, or an unsupported target if there is no JSON Patch. */
+    static Target patch(
+        String type, @Nullable String id, @Nullable String patch, String description) {
+      return id == null || patch == null
+          ? unsupported(description)
+          : new Target(Kind.PATCH, type, id, null, patch, description);
     }
   }
 
@@ -225,7 +257,40 @@ public class OrgScopedAccessChecker implements AccessChecker {
     if (method == RequestTypeEnum.PUT && id != null) {
       return new Target(Kind.UPDATE, type, id, parseBody(request), description);
     }
+    if (method == RequestTypeEnum.PATCH && operation == null) {
+      String patch = isJsonPatch(request.getHeader(CONTENT_TYPE)) ? readText(request) : null;
+      return Target.patch(type, id, patch, description);
+    }
     return Target.unsupported(description);
+  }
+
+  private static String readText(RequestDetailsReader request) {
+    Charset charset = request.getCharset();
+    return new String(
+        request.loadRequestContents(), charset == null ? StandardCharsets.UTF_8 : charset);
+  }
+
+  /**
+   * The JSON Patch carried by a Bundle entry: a {@code Binary} whose content type is JSON Patch.
+   * Anything else, such as a FHIRPath Patch {@code Parameters}, yields {@code null}.
+   */
+  private static @Nullable String jsonPatchOf(@Nullable Resource body) {
+    if (!(body instanceof Binary)) {
+      return null;
+    }
+    Binary binary = (Binary) body;
+    return isJsonPatch(binary.getContentType()) && binary.hasData()
+        ? new String(binary.getData(), StandardCharsets.UTF_8)
+        : null;
+  }
+
+  private static boolean isJsonPatch(@Nullable String contentType) {
+    if (contentType == null) {
+      return false;
+    }
+    int parameters = contentType.indexOf(';');
+    String mediaType = parameters < 0 ? contentType : contentType.substring(0, parameters);
+    return JSON_PATCH_MEDIA_TYPE.equalsIgnoreCase(mediaType.trim());
   }
 
   private Resource parseBody(RequestDetailsReader request) {
@@ -290,6 +355,10 @@ public class OrgScopedAccessChecker implements AccessChecker {
         return segments.size() == 2 && !hasQuery
             ? new Target(Kind.UPDATE, type, id, body, description)
             : Target.unsupported(description);
+      case PATCH:
+        return segments.size() == 2 && !hasQuery
+            ? Target.patch(type, id, jsonPatchOf(body), description)
+            : Target.unsupported(description);
       default:
         return Target.unsupported(description);
     }
@@ -342,15 +411,31 @@ public class OrgScopedAccessChecker implements AccessChecker {
         typesByFullUrl.put(entry.getFullUrl(), entry.getResource().fhirType());
       }
     }
-    Set<String> bundlePatients = new HashSet<>();
     List<Bundle.BundleEntryComponent> entries = bundle.getEntry();
+    List<Target> targets = new ArrayList<>();
+    Map<String, Integer> entriesPerResource = new HashMap<>();
+    for (int i = 0; i < entries.size(); i++) {
+      Target target = entryTarget(entries.get(i), i);
+      targets.add(target);
+      if (target.type != null && target.id != null) {
+        entriesPerResource.merge(target.type + "/" + target.id, 1, Integer::sum);
+      }
+    }
+    Set<String> bundlePatients = new HashSet<>();
     for (int i = 0; i < entries.size(); i++) {
       Bundle.BundleEntryComponent entry = entries.get(i);
-      Target target = entryTarget(entry, i);
-      DenyReason reason =
-          target.kind == Kind.SEARCH
-              ? DenyReason.UNSUPPORTED
-              : check(target, bundlePatients, typesByFullUrl);
+      Target target = targets.get(i);
+      DenyReason reason;
+      if (target.kind == Kind.SEARCH) {
+        reason = DenyReason.UNSUPPORTED;
+      } else if (target.kind == Kind.PATCH
+          && entriesPerResource.getOrDefault(target.type + "/" + target.id, 0) > 1) {
+        // The patch would apply to whatever the other entry leaves, not to the stored version
+        // checked here.
+        reason = DenyReason.UNSUPPORTED;
+      } else {
+        reason = check(target, bundlePatients, typesByFullUrl);
+      }
       if (reason != null) {
         return deny(description + " (" + target.description + ")", reason);
       }
@@ -387,8 +472,49 @@ public class OrgScopedAccessChecker implements AccessChecker {
       case UPDATE:
         DenyReason bodyReason = checkBody(target, bundlePatients, typesByFullUrl);
         return bodyReason != null ? bodyReason : checkExistingForUpdate(target);
+      case PATCH:
+        return checkPatch(target, bundlePatients, typesByFullUrl);
       default:
         return DenyReason.UNSUPPORTED;
+    }
+  }
+
+  /**
+   * A patch must target a resource that is in scope, and the patched resource must pass the same
+   * body rule as an update. The patch is applied in memory with HAPI's own JSON Patch code, so the
+   * result is what the store would write.
+   *
+   * <p>The check reads the current version, so a concurrent write between this check and the store
+   * applying the patch is not seen. The same holds for updates.
+   */
+  private @Nullable DenyReason checkPatch(
+      Target target, Set<String> bundlePatients, Map<String, String> typesByFullUrl) {
+    String type = requireType(target);
+    String id = requireId(target);
+    ScopeParam scopeParam = rules.scopeParamFor(type);
+    switch (scopeParam.kind()) {
+      case NONE:
+        return null;
+      case DENY:
+        return DenyReason.TYPE_NOT_SCOPABLE;
+      default:
+        Resource current = scopeService.findInScope(type, id, scopeParam.param(), scope, search);
+        if (current == null) {
+          return DenyReason.OUT_OF_SCOPE;
+        }
+        Resource patched;
+        try {
+          patched =
+              JsonPatchUtils.apply(fhirContext, current, Objects.requireNonNull(target.patch));
+        } catch (InvalidRequestException | DataFormatException e) {
+          logger.info(
+              "JSON Patch cannot be applied for {}: {}", target.description, e.getMessage());
+          return DenyReason.INVALID_PATCH;
+        }
+        return checkBody(
+            new Target(Kind.UPDATE, type, id, patched, target.description),
+            bundlePatients,
+            typesByFullUrl);
     }
   }
 

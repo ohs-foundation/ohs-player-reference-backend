@@ -114,9 +114,31 @@ public class OrgScopeService {
     if (scope.organizationIds().isEmpty()) {
       return false;
     }
-    return hasMatch(
-        search,
-        probeUrl(type, id) + "&" + searchParam + "=" + encode(scope.filterValue(searchParam)));
+    return hasMatch(search, scopedProbeUrl(type, id, searchParam, scope));
+  }
+
+  /**
+   * Returns the current version of {@code type/id} if it exists and matches {@code searchParam} for
+   * the scope, or {@code null} otherwise. Like {@link #existsInScope}, this is one upstream search,
+   * but it returns the whole resource.
+   *
+   * @throws GatewayFhirSearch.UpstreamException if the search fails
+   */
+  public @Nullable Resource findInScope(
+      String type, String id, String searchParam, OrgScope scope, GatewayFhirSearch search) {
+    if (scope.organizationIds().isEmpty()) {
+      return null;
+    }
+    for (Bundle.BundleEntryComponent entry :
+        search.search(scopedProbeUrl(type, id, searchParam, scope) + "&_count=1").getEntry()) {
+      Resource resource = entry.getResource();
+      if (resource != null
+          && type.equals(resource.fhirType())
+          && id.equals(resource.getIdElement().getIdPart())) {
+        return resource;
+      }
+    }
+    return null;
   }
 
   /**
@@ -134,6 +156,10 @@ public class OrgScopeService {
 
   private static String probeUrl(String type, String id) {
     return type + "?_id=" + encode(id);
+  }
+
+  private static String scopedProbeUrl(String type, String id, String searchParam, OrgScope scope) {
+    return probeUrl(type, id) + "&" + searchParam + "=" + encode(scope.filterValue(searchParam));
   }
 
   private static String encode(String value) {
