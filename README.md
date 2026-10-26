@@ -69,6 +69,8 @@ The plugin does not bundle FHIR Gateway classes — they are declared `provided`
 | `location-hierarchy.max-nodes` | `10000` | Maximum number of Location nodes to return in one response, including the root. |
 | `location-hierarchy.cache-ttl-seconds` | `86400` | How long to keep a successful hierarchy response in the local Caffeine cache. |
 | `location-hierarchy.cache-max-total-nodes` | `100000` | Approximate maximum number of Location nodes held across all cached hierarchy responses in one JVM. |
+| `org-scope.hierarchy-max-depth` | `10` | *(`org_scoped_access`)* Number of `Organization.partOf` levels included below a user's own organizations. |
+| `org-scope.hierarchy-max-organizations` | `2000` | *(`org_scoped_access`)* Maximum organizations in one user's scope. A larger scope denies the user rather than being cut short. |
 
 ### IAM providers
 
@@ -573,6 +575,57 @@ To enable AuditEvents for these requests, set `AUDIT_EVENT_ACTIONS_CONFIG` on th
 
 **Note:** an AuditEvent is written per REST request — and per entry within a Bundle (batch/transaction), not just once for the whole Bundle. On a busy deployment, or with a broad config like `CRUDE` (which also covers reads and searches), this can generate AuditEvent resources quickly and grow the upstream FHIR store's storage significantly. Prefer a narrower config (e.g. `CUD` for writes only) unless you specifically need read/search auditing, and plan storage/retention for the upstream FHIR store accordingly.
 `GET /api/practitioner-details` with no query parameters resolves the caller's own practitioner record from the JWT and requires only a valid token — no `practitioner-details.view` role is needed for this self-lookup form.
+
+### Organization-scoped access (`org_scoped_access`)
+
+Set `ACCESS_CHECKER=org_scoped_access` to add an organization boundary on top of the role checks above. A request must pass `OhsPlayerAccessChecker` first. It must then also be limited to data belonging to the caller's organizations. This checker is a sample: it covers common cases and denies everything else.
+
+**Scope model.** The caller's organizations are the `PractitionerRole.organization` values of their Practitioner, plus every descendant organization reached through `Organization.partOf`. Organizations from multiple roles are combined. A Patient belongs to its `managingOrganization`. Every resource in a Patient's compartment (Encounter, Observation, Condition and so on) belongs where its Patient does. Scopes are cached for 5 minutes, so role changes can take that long to apply.
+
+**Data prerequisites.**
+
+- Each user's Practitioner has the identifier `http://ohs.dev/identifiers/keycloak-user-id|<IAM user id>` and at least one `PractitionerRole` with an `organization`. Users without one are denied everything.
+- Every Patient has `managingOrganization` set.
+- Location, HealthcareService, Endpoint and PractitionerRole reads are scoped by their `organization` search parameter (`Location.managingOrganization` for Locations).
+- The FHIR store should not reuse cached search results (`hapi.fhir.reuse_cached_search_results_millis=0` on HAPI). Otherwise a scope check may briefly see stale data.
+
+**Configuration.**
+
+| Environment variable                     | Default | Description |
+| ---------------------------------------- | ------- | --- |
+| `ORG_SCOPE_HIERARCHY_MAX_DEPTH`          | `10`    | Number of `partOf` levels included below the user's own organizations. Levels beyond this are not included. |
+| `ORG_SCOPE_HIERARCHY_MAX_ORGANIZATIONS`  | `2000`  | Maximum organizations in one user's scope. A larger scope denies the user and logs a warning. |
+
+A user with the `ORG_SCOPE_EXEMPT` role bypasses organization scoping, but still needs the usual `<HTTP_VERB>_<RESOURCE_TYPE>` roles.
+
+**Supported interactions.**
+
+| Interaction | Behaviour |
+| --- | --- |
+| Search (`GET /Patient?...`) | Allowed. The checker adds the caller's organizations to the query (e.g. `patient.organization=Organization/a,Organization/b`) and removes `_include`, `_revinclude`, `_filter`, `_contained` and `_containedType`. |
+| Read, vread, instance history, delete by id | Allowed if the resource is in scope. vread and history are checked against the current version. |
+| Create (`POST /Patient`, `POST /Encounter`, ...) | A Patient's `managingOrganization` must be in scope. A compartment resource must reference at least one Patient, and every Patient it references must be in scope. |
+| Update (`PUT /Type/id`) | As create. The existing resource must also be in scope, unless the update creates it. |
+| JSON Patch (`PATCH /Type/id`, `Content-Type: application/json-patch+json`) | The existing resource must be in scope, and the patched resource must pass the create rule. In a Bundle the patch is a `Binary` entry; it is denied if another entry targets the same resource. Callers need `PATCH_<TYPE>` roles. |
+| Transaction and batch Bundles | Every entry must be allowed. A Patient created earlier in the same Bundle (including via a `urn:uuid:` fullUrl) counts as in scope for later entries. |
+| Shared reference data (Practitioner, ValueSet, CodeSystem, ConceptMap, Questionnaire, StructureDefinition, SearchParameter, CapabilityStatement, OperationDefinition, NamingSystem, Medication, Substance) | Not scoped. |
+
+**Limitations.** These requests are denied:
+
+- FHIRPath Patch, conditional PATCH and `$operations` (including `$everything`).
+- `POST _search`, type-level history and system-level requests.
+- Searches inside Bundles.
+- Writes to Organization, Location and other organization-scoped types.
+- AdverseEvent, DeviceUseStatement, Group, Schedule and SupplyRequest.
+- Resource types that fit none of the scope rules.
+
+The javadoc on `OrgScopedAccessChecker` and `OrgScopeRules` describes how to extend each of these.
+
+**Paging.** The Gateway allows `_getpages` continuation requests through `ALLOWED_QUERIES_FILE` before any checker runs. The pages come from a search this checker already filtered. Leave `ALLOWED_QUERIES_FILE` unset if you need every request checked, at the cost of paging.
+
+**`_elements` does not hide data.** A caller can request any elements of a resource in scope. Use it to shape responses, not to restrict access.
+
+Denials are logged at `INFO` with a reason (`ROLE_MISSING`, `NO_ORGANIZATION`, `OUT_OF_SCOPE`, ...) and return `403 Forbidden`.
 
 ---
 
