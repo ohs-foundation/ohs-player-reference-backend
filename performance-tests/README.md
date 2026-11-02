@@ -20,6 +20,12 @@ pip install -r requirements.txt
 
 The rest of this doc assumes the venv is activated (so `python` resolves to `.venv/bin/python`). If you'd rather not activate it (e.g. in a script), call `.venv/bin/python` explicitly instead everywhere below.
 
+It also assumes that you are already running this backend plugin using the instruction in the parent `README.md` document e.g.
+```sh
+$ java -Dloader.path="ohs-player-backend-extensions-1.0-SNAPSHOT.jar" -jar fhir-gateway-exec.jar
+
+```
+
 ## Configuration
 
 | Variable | Used by | Description |
