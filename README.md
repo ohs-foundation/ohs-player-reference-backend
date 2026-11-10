@@ -89,6 +89,7 @@ An unknown value causes the application to fail at startup with a clear error me
 | `POST` | `/api/users` | Create user in Keycloak and a matching FHIR Practitioner |
 | `GET` | `/api/users` | List all Practitioners. Supports any FHIR query parameter, e.g. `?name=John&_sort=family&_count=10` |
 | `GET` | `/api/users/{id}` | Get a single Practitioner by FHIR ID |
+| `GET` | `/api/users/{id}/groups` | List the Keycloak groups the user is in, with each group's roles |
 | `PUT` | `/api/users/{id}` | Update user in Keycloak and Practitioner |
 | `PUT` | `/api/users/{id}/password` | Set a user's password in Keycloak |
 | `DELETE` | `/api/users/{id}` | Delete user from Keycloak and FHIR |
@@ -135,6 +136,28 @@ The `email` field is always synced to `Practitioner.telecom` with `system=email`
 ```
 
 `password` is required. `temporary` is optional and defaults to `false`. When `true`, Keycloak marks the credential as temporary and the user must change it on next login. Returns `204 No Content` on success.
+
+**Response** (GET `/api/users/{id}/groups`):
+
+```json
+[
+  {
+    "id": "group-uuid-1",
+    "name": "Practitioner",
+    "path": "/Practitioner",
+    "realmRoles": ["GET_PATIENT", "practitioner-details.view"],
+    "clientRoles": { "ohs-portal": ["dashboard.view"] }
+  }
+]
+```
+
+Returns `200` with the groups, or `[]` when the user is in no groups. Each group has the same shape as `GET /api/groups/{id}`.
+
+`realmRoles` and `clientRoles` list only the roles mapped directly to that group. `clientRoles` is keyed by client ID. Roles inherited from a parent group, roles assigned to the user directly, and roles inside composite roles are not included.
+
+Returns `404` when the Practitioner does not exist, `422` when it has no `http://ohs.dev/identifiers/keycloak-user-id` identifier, and `502` when the FHIR server or Keycloak cannot be reached. If the Keycloak user was deleted, the Keycloak status (`404`) is passed through.
+
+Requires `users.view`. The response shows group role mappings, which `GET /api/groups/{id}` protects with `groups.view`. Avoid giving a role `users.view` without `groups.view` unless that role may see which roles each group grants.
 
 ## Group Management API
 

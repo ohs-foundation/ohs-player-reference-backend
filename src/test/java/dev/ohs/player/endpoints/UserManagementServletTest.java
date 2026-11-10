@@ -8,6 +8,7 @@ import static org.mockito.Mockito.*;
 import ca.uhn.fhir.context.FhirContext;
 import ca.uhn.fhir.parser.IParser;
 import ca.uhn.fhir.rest.server.exceptions.ResourceNotFoundException;
+import com.fasterxml.jackson.core.type.TypeReference;
 import dev.ohs.player.auth.AuthenticatedUser;
 import dev.ohs.player.auth.AuthorizationHandler;
 import dev.ohs.player.fhir.PractitionerService;
@@ -248,6 +249,117 @@ class UserManagementServletTest {
     servlet.doGet(request, response);
 
     verify(response).setStatus(404);
+  }
+
+  // -------------------------------------------------------------------------
+  // GET /api/users/{id}/groups
+  // -------------------------------------------------------------------------
+
+  @Test
+  void doGetGroups_UserInGroups_Returns200WithGroupsAndRoles() throws Exception {
+    givenGroupsPathForIamUser();
+    IamGroupRepresentation nurses = groupRep("g1", "nurses", "/district/nurses");
+    nurses.setRealmRoles(List.of("GET_PATIENT"));
+    nurses.setClientRoles(Map.of("ohs-portal", List.of("dashboard.view")));
+    IamGroupRepresentation admins = groupRep("g2", "admins", "/admins");
+    admins.setRealmRoles(List.of());
+    admins.setClientRoles(Map.of());
+    when(iamProviderService.getUserGroupsWithRoles(IAM_USER_ID))
+        .thenReturn(List.of(nurses, admins));
+
+    servlet.doGet(request, response);
+
+    verify(response).setStatus(HttpServletResponse.SC_OK);
+    verify(response).setContentType(ServletResponseUtil.CONTENT_TYPE_JSON);
+    List<Map<String, Object>> body = parseJsonArray(stringWriter.toString());
+    assertEquals(2, body.size());
+    assertEquals("g1", body.get(0).get("id"));
+    assertEquals("nurses", body.get(0).get("name"));
+    assertEquals("/district/nurses", body.get(0).get("path"));
+    assertEquals(List.of("GET_PATIENT"), body.get(0).get("realmRoles"));
+    assertEquals(Map.of("ohs-portal", List.of("dashboard.view")), body.get(0).get("clientRoles"));
+    assertEquals("g2", body.get(1).get("id"));
+  }
+
+  @Test
+  void doGetGroups_UserInNoGroups_Returns200WithEmptyArray() throws Exception {
+    givenGroupsPathForIamUser();
+    when(iamProviderService.getUserGroupsWithRoles(IAM_USER_ID)).thenReturn(List.of());
+
+    servlet.doGet(request, response);
+
+    verify(response).setStatus(HttpServletResponse.SC_OK);
+    assertEquals("[]", stringWriter.toString().trim());
+  }
+
+  @Test
+  void doGetGroups_PractitionerNotFound_Returns404_NoIamCall() throws Exception {
+    when(request.getPathInfo()).thenReturn("/" + PRACTITIONER_ID + "/groups");
+    when(practitionerService.getPractitioner(PRACTITIONER_ID))
+        .thenThrow(new ResourceNotFoundException("Not found"));
+
+    servlet.doGet(request, response);
+
+    verify(response).setStatus(404);
+    assertTrue(stringWriter.toString().contains("Practitioner not found"));
+    verifyNoInteractions(iamProviderService);
+  }
+
+  @Test
+  void doGetGroups_PractitionerHasNoIamIdentifier_Returns422() throws Exception {
+    when(request.getPathInfo()).thenReturn("/" + PRACTITIONER_ID + "/groups");
+    Practitioner existing = new Practitioner();
+    when(practitionerService.getPractitioner(PRACTITIONER_ID)).thenReturn(existing);
+    when(practitionerService.extractIamUserId(existing)).thenReturn(null);
+
+    servlet.doGet(request, response);
+
+    verify(response).setStatus(422);
+    verifyNoInteractions(iamProviderService);
+  }
+
+  @Test
+  void doGetGroups_IamUnexpectedFailure_Returns502() throws Exception {
+    givenGroupsPathForIamUser();
+    when(iamProviderService.getUserGroupsWithRoles(IAM_USER_ID))
+        .thenThrow(new RuntimeException("Keycloak down"));
+
+    servlet.doGet(request, response);
+
+    verify(response).setStatus(HttpServletResponse.SC_BAD_GATEWAY);
+  }
+
+  @Test
+  void doGetGroups_ViewRoleOnly_Returns200() throws Exception {
+    when(request.getAttribute(AuthorizationHandler.AUTH_USER_ATTRIBUTE))
+        .thenReturn(new AuthenticatedUser("id", "user", Set.of("users.view")));
+    givenGroupsPathForIamUser();
+    when(iamProviderService.getUserGroupsWithRoles(IAM_USER_ID)).thenReturn(List.of());
+
+    servlet.doGet(request, response);
+
+    verify(response).setStatus(HttpServletResponse.SC_OK);
+  }
+
+  @Test
+  void doGetGroups_NoUsersRole_Returns403_NeverCallsDownstream() throws Exception {
+    when(request.getAttribute(AuthorizationHandler.AUTH_USER_ATTRIBUTE))
+        .thenReturn(new AuthenticatedUser("id", "user", Set.of("groups.view")));
+
+    servlet.doGet(request, response);
+
+    verify(response).setStatus(HttpServletResponse.SC_FORBIDDEN);
+    verifyNoInteractions(iamProviderService, practitionerService);
+  }
+
+  @Test
+  void doGetGroups_BlankPractitionerId_Returns400() throws Exception {
+    when(request.getPathInfo()).thenReturn("//groups");
+
+    servlet.doGet(request, response);
+
+    verify(response).setStatus(HttpServletResponse.SC_BAD_REQUEST);
+    verifyNoInteractions(iamProviderService, practitionerService);
   }
 
   @Test
@@ -723,6 +835,25 @@ class UserManagementServletTest {
     IamGroupRepresentation rep = new IamGroupRepresentation();
     rep.setId(id);
     return rep;
+  }
+
+  private IamGroupRepresentation groupRep(String id, String name, String path) {
+    IamGroupRepresentation rep = groupRep(id);
+    rep.setName(name);
+    rep.setPath(path);
+    return rep;
+  }
+
+  private void givenGroupsPathForIamUser() {
+    when(request.getPathInfo()).thenReturn("/" + PRACTITIONER_ID + "/groups");
+    Practitioner existing = new Practitioner();
+    when(practitionerService.getPractitioner(PRACTITIONER_ID)).thenReturn(existing);
+    when(practitionerService.extractIamUserId(existing)).thenReturn(IAM_USER_ID);
+  }
+
+  private List<Map<String, Object>> parseJsonArray(String json) throws Exception {
+    return ServletResponseUtil.getObjectMapper()
+        .readValue(json, new TypeReference<List<Map<String, Object>>>() {});
   }
 
   // -------------------------------------------------------------------------

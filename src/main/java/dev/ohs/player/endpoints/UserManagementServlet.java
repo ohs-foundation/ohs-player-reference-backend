@@ -97,6 +97,8 @@ public class UserManagementServlet extends HttpServlet {
 
     if (pathInfo == null || pathInfo.equals("/")) {
       handleSearch(request.getParameterMap(), response);
+    } else if (isGroupsPath(pathInfo)) {
+      handleGetUserGroups(extractIdFromGroupsPath(pathInfo), response);
     } else {
       String practitionerId = extractIdFromPath(pathInfo);
       if (practitionerId == null) {
@@ -132,29 +134,8 @@ public class UserManagementServlet extends HttpServlet {
     if (user == null) return;
     if (!validateRequiredFields(user, response)) return;
 
-    Practitioner existing;
-    try {
-      existing = practitionerService.getPractitioner(practitionerId);
-    } catch (BaseServerResponseException e) {
-      logger.warn("Practitioner not found for update: id={}", practitionerId);
-      ServletResponseUtil.writeJsonError(
-          response, e.getStatusCode(), "Practitioner not found: " + practitionerId);
-      return;
-    } catch (Exception e) {
-      logger.error("Failed to retrieve Practitioner for update: id={}", practitionerId, e);
-      ServletResponseUtil.writeJsonError(
-          response,
-          HttpServletResponse.SC_BAD_GATEWAY,
-          "Failed to retrieve Practitioner from FHIR server");
-      return;
-    }
-
-    String iamUserId = practitionerService.extractIamUserId(existing);
-    if (iamUserId == null) {
-      ServletResponseUtil.writeJsonError(
-          response, SC_UNPROCESSABLE_ENTITY, "Practitioner has no IAM provider identifier");
-      return;
-    }
+    String iamUserId = resolveIamUserId(practitionerId, "update", response);
+    if (iamUserId == null) return;
 
     try {
       iamProviderService.updateUser(iamUserId, user);
@@ -295,6 +276,58 @@ public class UserManagementServlet extends HttpServlet {
     }
   }
 
+  private void handleGetUserGroups(String practitionerId, HttpServletResponse response)
+      throws IOException {
+    String iamUserId = resolveIamUserId(practitionerId, "group lookup", response);
+    if (iamUserId == null) return;
+
+    List<IamGroupRepresentation> groups;
+    try {
+      groups = iamProviderService.getUserGroupsWithRoles(iamUserId);
+    } catch (Exception e) {
+      logger.error("Failed to get groups for IAM user: id={}", iamUserId, e);
+      ServletResponseUtil.writeJsonError(
+          response,
+          ServletResponseUtil.iamErrorStatus(e),
+          "Failed to get user groups from IAM provider: " + e.getMessage());
+      return;
+    }
+
+    ServletResponseUtil.writeJsonResponse(response, HttpServletResponse.SC_OK, groups);
+  }
+
+  /**
+   * Loads the Practitioner and returns its IAM user id. Writes the error response and returns
+   * {@code null} when the Practitioner cannot be read or has no IAM identifier.
+   */
+  private @Nullable String resolveIamUserId(
+      String practitionerId, String action, HttpServletResponse response) throws IOException {
+    Practitioner existing;
+    try {
+      existing = practitionerService.getPractitioner(practitionerId);
+    } catch (BaseServerResponseException e) {
+      logger.warn("Practitioner not found for {}: id={}", action, practitionerId);
+      ServletResponseUtil.writeJsonError(
+          response, e.getStatusCode(), "Practitioner not found: " + practitionerId);
+      return null;
+    } catch (Exception e) {
+      logger.error("Failed to retrieve Practitioner for {}: id={}", action, practitionerId, e);
+      ServletResponseUtil.writeJsonError(
+          response,
+          HttpServletResponse.SC_BAD_GATEWAY,
+          "Failed to retrieve Practitioner from FHIR server");
+      return null;
+    }
+
+    String iamUserId = practitionerService.extractIamUserId(existing);
+    if (iamUserId == null) {
+      ServletResponseUtil.writeJsonError(
+          response, SC_UNPROCESSABLE_ENTITY, "Practitioner has no IAM provider identifier");
+      return null;
+    }
+    return iamUserId;
+  }
+
   private @Nullable IamUser parseRequestBody(
       HttpServletRequest request, HttpServletResponse response) throws IOException {
     try {
@@ -339,6 +372,16 @@ public class UserManagementServlet extends HttpServlet {
     return pathInfo.split("/", -1)[1];
   }
 
+  private boolean isGroupsPath(String pathInfo) {
+    if (pathInfo == null) return false;
+    String[] parts = pathInfo.split("/", -1);
+    return parts.length == 3 && !parts[1].isBlank() && "groups".equals(parts[2]);
+  }
+
+  private String extractIdFromGroupsPath(String pathInfo) {
+    return pathInfo.split("/", -1)[1];
+  }
+
   private void handlePasswordReset(
       String practitionerId, HttpServletRequest request, HttpServletResponse response)
       throws IOException {
@@ -360,29 +403,8 @@ public class UserManagementServlet extends HttpServlet {
       return;
     }
 
-    Practitioner existing;
-    try {
-      existing = practitionerService.getPractitioner(practitionerId);
-    } catch (BaseServerResponseException e) {
-      logger.warn("Practitioner not found for password reset: id={}", practitionerId);
-      ServletResponseUtil.writeJsonError(
-          response, e.getStatusCode(), "Practitioner not found: " + practitionerId);
-      return;
-    } catch (Exception e) {
-      logger.error("Failed to retrieve Practitioner for password reset: id={}", practitionerId, e);
-      ServletResponseUtil.writeJsonError(
-          response,
-          HttpServletResponse.SC_BAD_GATEWAY,
-          "Failed to retrieve Practitioner from FHIR server");
-      return;
-    }
-
-    String iamUserId = practitionerService.extractIamUserId(existing);
-    if (iamUserId == null) {
-      ServletResponseUtil.writeJsonError(
-          response, SC_UNPROCESSABLE_ENTITY, "Practitioner has no IAM provider identifier");
-      return;
-    }
+    String iamUserId = resolveIamUserId(practitionerId, "password reset", response);
+    if (iamUserId == null) return;
 
     try {
       iamProviderService.resetPassword(
