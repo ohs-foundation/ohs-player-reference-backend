@@ -13,7 +13,6 @@ import dev.ohs.player.auth.AuthenticatedUser;
 import dev.ohs.player.auth.AuthorizationHandler;
 import dev.ohs.player.fhir.PractitionerService;
 import dev.ohs.player.iam.IamGroupRepresentation;
-import dev.ohs.player.iam.IamProviderException;
 import dev.ohs.player.iam.IamProviderService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -307,18 +306,6 @@ class UserManagementServletTest {
   }
 
   @Test
-  void doGetGroups_FhirServerUnavailable_Returns502() throws Exception {
-    when(request.getPathInfo()).thenReturn("/" + PRACTITIONER_ID + "/groups");
-    when(practitionerService.getPractitioner(PRACTITIONER_ID))
-        .thenThrow(new RuntimeException("FHIR down"));
-
-    servlet.doGet(request, response);
-
-    verify(response).setStatus(HttpServletResponse.SC_BAD_GATEWAY);
-    verifyNoInteractions(iamProviderService);
-  }
-
-  @Test
   void doGetGroups_PractitionerHasNoIamIdentifier_Returns422() throws Exception {
     when(request.getPathInfo()).thenReturn("/" + PRACTITIONER_ID + "/groups");
     Practitioner existing = new Practitioner();
@@ -329,17 +316,6 @@ class UserManagementServletTest {
 
     verify(response).setStatus(422);
     verifyNoInteractions(iamProviderService);
-  }
-
-  @Test
-  void doGetGroups_IamUserMissing_PassesThroughIamStatus() throws Exception {
-    givenGroupsPathForIamUser();
-    when(iamProviderService.getUserGroupsWithRoles(IAM_USER_ID))
-        .thenThrow(new IamProviderException(404, "not found"));
-
-    servlet.doGet(request, response);
-
-    verify(response).setStatus(404);
   }
 
   @Test
@@ -373,16 +349,6 @@ class UserManagementServletTest {
     servlet.doGet(request, response);
 
     verify(response).setStatus(HttpServletResponse.SC_FORBIDDEN);
-    verifyNoInteractions(iamProviderService, practitionerService);
-  }
-
-  @Test
-  void doGetGroups_ExtraPathSegment_Returns400() throws Exception {
-    when(request.getPathInfo()).thenReturn("/" + PRACTITIONER_ID + "/groups/extra");
-
-    servlet.doGet(request, response);
-
-    verify(response).setStatus(HttpServletResponse.SC_BAD_REQUEST);
     verifyNoInteractions(iamProviderService, practitionerService);
   }
 

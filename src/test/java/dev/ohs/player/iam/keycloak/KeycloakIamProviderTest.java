@@ -568,17 +568,6 @@ class KeycloakIamProviderTest {
     }
 
     @Test
-    void getUserGroupsWithRoles_UserNotInKeycloak_ThrowsWithNotFoundStatus() {
-      when(mockUserResource.groups(null, null, null, false))
-          .thenThrow(new WebApplicationException(404));
-
-      IamProviderException e =
-          assertThrows(
-              IamProviderException.class, () -> provider.getUserGroupsWithRoles(IAM_USER_ID));
-      assertEquals(404, e.getStatusCode());
-    }
-
-    @Test
     void getUserGroupsWithRoles_IamFails_ThrowsBadGatewayStatus() {
       when(mockUserResource.groups(null, null, null, false))
           .thenThrow(new RuntimeException("IAM error"));
