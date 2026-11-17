@@ -98,7 +98,7 @@ public class UserManagementServlet extends HttpServlet {
     if (pathInfo == null || pathInfo.equals("/")) {
       handleSearch(request.getParameterMap(), response);
     } else if (isGroupsPath(pathInfo)) {
-      handleGetUserGroups(extractIdFromGroupsPath(pathInfo), response);
+      handleGetUserGroups(extractIdFromGroupsPath(pathInfo), request, response);
     } else {
       String practitionerId = extractIdFromPath(pathInfo);
       if (practitionerId == null) {
@@ -276,7 +276,8 @@ public class UserManagementServlet extends HttpServlet {
     }
   }
 
-  private void handleGetUserGroups(String practitionerId, HttpServletResponse response)
+  private void handleGetUserGroups(
+      String practitionerId, HttpServletRequest request, HttpServletResponse response)
       throws IOException {
     String iamUserId = resolveIamUserId(practitionerId, "group lookup", response);
     if (iamUserId == null) return;
@@ -285,12 +286,33 @@ public class UserManagementServlet extends HttpServlet {
     try {
       groups = iamProviderService.getUserGroupsWithRoles(iamUserId);
     } catch (Exception e) {
+      if (ServletResponseUtil.iamErrorStatus(e) == HttpServletResponse.SC_NOT_FOUND) {
+        // The Practitioner exists but points to a deleted IAM user. Use 422, not 404, so
+        // clients do not read it as "Practitioner not found".
+        logger.warn(
+            "IAM user not found for Practitioner: practitionerId={}, iamUserId={}",
+            practitionerId,
+            iamUserId);
+        ServletResponseUtil.writeJsonError(
+            response, SC_UNPROCESSABLE_ENTITY, "IAM user not found for Practitioner");
+        return;
+      }
       logger.error("Failed to get groups for IAM user: id={}", iamUserId, e);
       ServletResponseUtil.writeJsonError(
           response,
           ServletResponseUtil.iamErrorStatus(e),
           "Failed to get user groups from IAM provider: " + e.getMessage());
       return;
+    }
+
+    // Group role mappings are group data. GET /api/groups/{id} needs groups.view to show
+    // them, so hide them here too when the caller lacks it.
+    if (!AuthorizationHandler.hasRole(
+        AuthorizationHandler.getUser(request), "groups", RoleLevel.VIEW)) {
+      for (IamGroupRepresentation group : groups) {
+        group.setRealmRoles(List.of());
+        group.setClientRoles(Map.of());
+      }
     }
 
     ServletResponseUtil.writeJsonResponse(response, HttpServletResponse.SC_OK, groups);

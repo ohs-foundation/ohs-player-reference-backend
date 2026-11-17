@@ -155,9 +155,9 @@ Returns `200` with the groups, or `[]` when the user is in no groups. Each group
 
 `realmRoles` and `clientRoles` list only the roles mapped directly to that group. `clientRoles` is keyed by client ID. Roles inherited from a parent group, roles assigned to the user directly, and roles inside composite roles are not included.
 
-Returns `404` when the Practitioner does not exist, `422` when it has no `http://ohs.dev/identifiers/keycloak-user-id` identifier, and `502` when the FHIR server or Keycloak cannot be reached. If the Keycloak user was deleted, the Keycloak status (`404`) is passed through.
+Returns `404` when the Practitioner does not exist, `422` when it has no `http://ohs.dev/identifiers/keycloak-user-id` identifier or its Keycloak user was deleted, and `502` when the FHIR server or Keycloak cannot be reached.
 
-Requires `users.view`. The response shows group role mappings, which `GET /api/groups/{id}` protects with `groups.view`. Avoid giving a role `users.view` without `groups.view` unless that role may see which roles each group grants.
+Requires `users.view`. `realmRoles` and `clientRoles` are filled only when the caller also has `groups.view`, the permission `GET /api/groups/{id}` needs. Without it, both are empty.
 
 ## Group Management API
 

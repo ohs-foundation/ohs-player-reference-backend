@@ -13,6 +13,7 @@ import dev.ohs.player.auth.AuthenticatedUser;
 import dev.ohs.player.auth.AuthorizationHandler;
 import dev.ohs.player.fhir.PractitionerService;
 import dev.ohs.player.iam.IamGroupRepresentation;
+import dev.ohs.player.iam.IamProviderException;
 import dev.ohs.player.iam.IamProviderService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -256,7 +257,9 @@ class UserManagementServletTest {
   // -------------------------------------------------------------------------
 
   @Test
-  void doGetGroups_UserInGroups_Returns200WithGroupsAndRoles() throws Exception {
+  void doGetGroups_CallerHasGroupsView_Returns200WithGroupsAndRoles() throws Exception {
+    when(request.getAttribute(AuthorizationHandler.AUTH_USER_ATTRIBUTE))
+        .thenReturn(new AuthenticatedUser("id", "user", Set.of("users.view", "groups.view")));
     givenGroupsPathForIamUser();
     IamGroupRepresentation nurses = groupRep("g1", "nurses", "/district/nurses");
     nurses.setRealmRoles(List.of("GET_PATIENT"));
@@ -279,6 +282,40 @@ class UserManagementServletTest {
     assertEquals(List.of("GET_PATIENT"), body.get(0).get("realmRoles"));
     assertEquals(Map.of("ohs-portal", List.of("dashboard.view")), body.get(0).get("clientRoles"));
     assertEquals("g2", body.get(1).get("id"));
+  }
+
+  @Test
+  void doGetGroups_CallerWithoutGroupsView_Returns200WithEmptyRoles() throws Exception {
+    when(request.getAttribute(AuthorizationHandler.AUTH_USER_ATTRIBUTE))
+        .thenReturn(new AuthenticatedUser("id", "user", Set.of("users.view")));
+    givenGroupsPathForIamUser();
+    IamGroupRepresentation nurses = groupRep("g1", "nurses", "/district/nurses");
+    nurses.setRealmRoles(List.of("GET_PATIENT"));
+    nurses.setClientRoles(Map.of("ohs-portal", List.of("dashboard.view")));
+    when(iamProviderService.getUserGroupsWithRoles(IAM_USER_ID)).thenReturn(List.of(nurses));
+
+    servlet.doGet(request, response);
+
+    verify(response).setStatus(HttpServletResponse.SC_OK);
+    List<Map<String, Object>> body = parseJsonArray(stringWriter.toString());
+    assertEquals(1, body.size());
+    assertEquals("g1", body.get(0).get("id"));
+    assertEquals("nurses", body.get(0).get("name"));
+    assertEquals("/district/nurses", body.get(0).get("path"));
+    assertEquals(List.of(), body.get(0).get("realmRoles"));
+    assertEquals(Map.of(), body.get(0).get("clientRoles"));
+  }
+
+  @Test
+  void doGetGroups_IamUserMissing_Returns422() throws Exception {
+    givenGroupsPathForIamUser();
+    when(iamProviderService.getUserGroupsWithRoles(IAM_USER_ID))
+        .thenThrow(new IamProviderException(404, "Failed to get groups for IAM user"));
+
+    servlet.doGet(request, response);
+
+    verify(response).setStatus(422);
+    assertTrue(stringWriter.toString().contains("IAM user not found for Practitioner"));
   }
 
   @Test
