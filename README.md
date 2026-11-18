@@ -124,7 +124,13 @@ An unknown value causes the application to fail at startup with a clear error me
 
 The `email` field is always synced to `Practitioner.telecom` with `system=email`, `use=work`.
 
-`groupIds` is optional. When present, group membership is set to exactly the listed IDs: missing memberships are added and extra ones removed. An empty array (`[]`) removes the user from all groups. Omitting the field leaves memberships unchanged. Group assignment failures are logged as warnings and do not fail the overall request.
+`groupIds` is optional. When present, group membership is set to exactly the listed IDs: missing memberships are added and extra ones removed. An empty array (`[]`) removes the user from all groups. Omitting the field leaves memberships unchanged.
+
+Group failures with `groupIds`:
+
+- On PUT, the gateway reads the user's current groups before it changes anything. If the read fails, nothing is changed. The request returns Keycloak's error status, or `502` when Keycloak cannot be reached.
+- If Keycloak rejects a group change with a 4xx, for example an unknown group ID, the request returns `400` and stops. On POST, the gateway tries to delete the new user and Practitioner. If a delete fails, the gateway logs it at ERROR and still returns `400`. On PUT, the profile changes and any group changes made before the error are already saved.
+- If Keycloak fails while adding or removing a group (a 5xx or a network error), the gateway still tries every other group, then returns `502`. The `error` message lists the failed group IDs and says that the user was created (POST, with the new Practitioner ID) or the profile was saved (PUT). To finish the group changes, send `PUT /api/users/{practitioner-id}` with the same `groupIds`.
 
 **Request body** (PUT `/api/users/{id}/password`):
 
