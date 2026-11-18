@@ -38,6 +38,12 @@ public interface IamProviderService {
   /** Returns the groups the given IAM user currently belongs to. */
   List<IamGroupRepresentation> getUserGroups(String iamUserId);
 
+  /**
+   * Returns the groups the given IAM user currently belongs to, each with the realm and client
+   * roles mapped directly to that group. Roles inherited from parent groups are not included.
+   */
+  List<IamGroupRepresentation> getUserGroupsWithRoles(String iamUserId);
+
   // --- Role discovery ---
 
   AvailableRolesResponse listAvailableRoles();

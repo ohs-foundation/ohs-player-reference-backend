@@ -89,6 +89,7 @@ An unknown value causes the application to fail at startup with a clear error me
 | `POST` | `/api/users` | Create user in Keycloak and a matching FHIR Practitioner |
 | `GET` | `/api/users` | List all Practitioners. Supports any FHIR query parameter, e.g. `?name=John&_sort=family&_count=10` |
 | `GET` | `/api/users/{id}` | Get a single Practitioner by FHIR ID |
+| `GET` | `/api/users/{id}/groups` | List the Keycloak groups the user is in, with each group's roles |
 | `PUT` | `/api/users/{id}` | Update user in Keycloak and Practitioner |
 | `PUT` | `/api/users/{id}/password` | Set a user's password in Keycloak |
 | `DELETE` | `/api/users/{id}` | Delete user from Keycloak and FHIR |
@@ -123,7 +124,13 @@ An unknown value causes the application to fail at startup with a clear error me
 
 The `email` field is always synced to `Practitioner.telecom` with `system=email`, `use=work`.
 
-`groupIds` is optional. When present, group membership is set to exactly the listed IDs: missing memberships are added and extra ones removed. An empty array (`[]`) removes the user from all groups. Omitting the field leaves memberships unchanged. Group assignment failures are logged as warnings and do not fail the overall request.
+`groupIds` is optional. When present, group membership is set to exactly the listed IDs: missing memberships are added and extra ones removed. An empty array (`[]`) removes the user from all groups. Omitting the field leaves memberships unchanged.
+
+Group failures with `groupIds`:
+
+- On PUT, the gateway reads the user's current groups before it changes anything. If the read fails, nothing is changed. The request returns Keycloak's error status, or `502` when Keycloak cannot be reached.
+- If Keycloak rejects a group change with a 4xx, for example an unknown group ID, the request returns `400` and stops. On POST, the gateway tries to delete the new user and Practitioner. If a delete fails, the gateway logs it at ERROR and still returns `400`. On PUT, the profile changes and any group changes made before the error are already saved.
+- If Keycloak fails while adding or removing a group (a 5xx or a network error), the gateway still tries every other group, then returns `502`. The `error` message lists the failed group IDs and says that the user was created (POST, with the new Practitioner ID) or the profile was saved (PUT). To finish the group changes, send `PUT /api/users/{practitioner-id}` with the same `groupIds`.
 
 **Request body** (PUT `/api/users/{id}/password`):
 
@@ -135,6 +142,28 @@ The `email` field is always synced to `Practitioner.telecom` with `system=email`
 ```
 
 `password` is required. `temporary` is optional and defaults to `false`. When `true`, Keycloak marks the credential as temporary and the user must change it on next login. Returns `204 No Content` on success.
+
+**Response** (GET `/api/users/{id}/groups`):
+
+```json
+[
+  {
+    "id": "group-uuid-1",
+    "name": "Practitioner",
+    "path": "/Practitioner",
+    "realmRoles": ["GET_PATIENT", "practitioner-details.view"],
+    "clientRoles": { "ohs-portal": ["dashboard.view"] }
+  }
+]
+```
+
+Returns `200` with the groups, or `[]` when the user is in no groups. Each group has the same shape as `GET /api/groups/{id}`.
+
+`realmRoles` and `clientRoles` list only the roles mapped directly to that group. `clientRoles` is keyed by client ID. Roles inherited from a parent group, roles assigned to the user directly, and roles inside composite roles are not included.
+
+Returns `404` when the Practitioner does not exist, `422` when it has no `http://ohs.dev/identifiers/keycloak-user-id` identifier or its Keycloak user was deleted, and `502` when the FHIR server or Keycloak cannot be reached.
+
+Requires `users.view`. `realmRoles` and `clientRoles` are filled only when the caller also has `groups.view`, the permission `GET /api/groups/{id}` needs. Without it, both are empty.
 
 ## Group Management API
 

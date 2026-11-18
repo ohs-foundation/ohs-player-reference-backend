@@ -234,6 +234,18 @@ public class KeycloakIamProvider implements IamProviderService {
     }
   }
 
+  @Override
+  public List<IamGroupRepresentation> getUserGroupsWithRoles(String iamUserId) {
+    try {
+      // briefRepresentation=false makes Keycloak include each group's role mappings
+      List<GroupRepresentation> groups =
+          keycloak.realm(realm).users().get(iamUserId).groups(null, null, null, false);
+      return groups.stream().map(this::toGroupRepresentationWithRoles).collect(Collectors.toList());
+    } catch (Exception e) {
+      throw wrap("Failed to get groups for IAM user: " + iamUserId, e);
+    }
+  }
+
   // --- Role discovery ---
 
   @Override
@@ -438,6 +450,15 @@ public class KeycloakIamProvider implements IamProviderService {
     result.setId(rep.getId());
     result.setName(rep.getName());
     result.setPath(rep.getPath());
+    return result;
+  }
+
+  private IamGroupRepresentation toGroupRepresentationWithRoles(GroupRepresentation rep) {
+    IamGroupRepresentation result = toBasicGroupRepresentation(rep);
+    result.setRealmRoles(
+        rep.getRealmRoles() != null ? rep.getRealmRoles() : Collections.emptyList());
+    result.setClientRoles(
+        rep.getClientRoles() != null ? rep.getClientRoles() : Collections.emptyMap());
     return result;
   }
 

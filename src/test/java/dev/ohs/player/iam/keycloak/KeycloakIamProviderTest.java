@@ -536,6 +536,48 @@ class KeycloakIamProviderTest {
       assertThrows(IamProviderException.class, () -> provider.getUserGroups(IAM_USER_ID));
     }
 
+    // getUserGroupsWithRoles
+
+    @Test
+    void getUserGroupsWithRoles_FullRepresentation_MapsGroupAndRoles() {
+      GroupRepresentation g = keycloakGroupRep("gid-1", "nurses", "/district/nurses");
+      g.setRealmRoles(List.of("GET_PATIENT", "users.view"));
+      g.setClientRoles(Map.of("ohs-portal", List.of("dashboard.view")));
+      when(mockUserResource.groups(null, null, null, false)).thenReturn(List.of(g));
+
+      List<IamGroupRepresentation> result = provider.getUserGroupsWithRoles(IAM_USER_ID);
+
+      assertEquals(1, result.size());
+      IamGroupRepresentation rep = result.get(0);
+      assertEquals("gid-1", rep.getId());
+      assertEquals("nurses", rep.getName());
+      assertEquals("/district/nurses", rep.getPath());
+      assertEquals(List.of("GET_PATIENT", "users.view"), rep.getRealmRoles());
+      assertEquals(Map.of("ohs-portal", List.of("dashboard.view")), rep.getClientRoles());
+    }
+
+    @Test
+    void getUserGroupsWithRoles_GroupWithoutRoles_ReturnsEmptyRoles() {
+      GroupRepresentation g = keycloakGroupRep("gid-1", "nurses", "/nurses");
+      when(mockUserResource.groups(null, null, null, false)).thenReturn(List.of(g));
+
+      List<IamGroupRepresentation> result = provider.getUserGroupsWithRoles(IAM_USER_ID);
+
+      assertEquals(Collections.emptyList(), result.get(0).getRealmRoles());
+      assertEquals(Collections.emptyMap(), result.get(0).getClientRoles());
+    }
+
+    @Test
+    void getUserGroupsWithRoles_IamFails_ThrowsBadGatewayStatus() {
+      when(mockUserResource.groups(null, null, null, false))
+          .thenThrow(new RuntimeException("IAM error"));
+
+      IamProviderException e =
+          assertThrows(
+              IamProviderException.class, () -> provider.getUserGroupsWithRoles(IAM_USER_ID));
+      assertEquals(502, e.getStatusCode());
+    }
+
     // Helpers
 
     private IamGroup groupWithName(String name) {
