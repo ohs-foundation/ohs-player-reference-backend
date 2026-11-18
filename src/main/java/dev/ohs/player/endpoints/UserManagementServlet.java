@@ -14,10 +14,13 @@ import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.util.HashSet;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.BiConsumer;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.hl7.fhir.r4.model.Bundle;
@@ -70,13 +73,25 @@ public class UserManagementServlet extends HttpServlet {
     }
 
     if (user.getGroupIds() != null) {
+      List<String> failedGroupIds;
       try {
-        assignUserGroups(iamUserId, user.getGroupIds());
+        failedGroupIds =
+            applyGroupChanges(
+                iamUserId, user.getGroupIds(), iamProviderService::addUserToGroup, "add");
       } catch (Exception e) {
         logger.error("Group assignment failed; rolling back user: {}", iamUserId, e);
         rollbackNewUser(iamUserId, practitioner);
         ServletResponseUtil.writeJsonError(
             response, HttpServletResponse.SC_BAD_REQUEST, "Group not found: " + e.getMessage());
+        return;
+      }
+      if (!failedGroupIds.isEmpty()) {
+        ServletResponseUtil.writeJsonError(
+            response,
+            HttpServletResponse.SC_BAD_GATEWAY,
+            createdUserLabel(practitioner)
+                + ", but group assignment failed for groups: "
+                + failedGroupIds);
         return;
       }
     }
@@ -137,6 +152,22 @@ public class UserManagementServlet extends HttpServlet {
     String iamUserId = resolveIamUserId(practitionerId, "update", response);
     if (iamUserId == null) return;
 
+    // Read current groups before any write, so a failed read leaves the user unchanged.
+    @Nullable Set<String> currentGroupIds = null;
+    if (user.getGroupIds() != null) {
+      try {
+        currentGroupIds = getUserGroupIds(iamUserId);
+      } catch (Exception e) {
+        logger.error("Failed to read current groups for user {}; nothing changed", iamUserId, e);
+        ServletResponseUtil.writeJsonError(
+            response,
+            ServletResponseUtil.iamErrorStatus(e),
+            "Failed to read current groups from IAM provider; nothing was changed: "
+                + e.getMessage());
+        return;
+      }
+    }
+
     try {
       iamProviderService.updateUser(iamUserId, user);
     } catch (Exception e) {
@@ -160,13 +191,21 @@ public class UserManagementServlet extends HttpServlet {
       return;
     }
 
-    if (user.getGroupIds() != null) {
+    if (user.getGroupIds() != null && currentGroupIds != null) {
+      List<String> failedGroupIds;
       try {
-        syncUserGroups(iamUserId, user.getGroupIds());
+        failedGroupIds = syncUserGroups(iamUserId, currentGroupIds, user.getGroupIds());
       } catch (Exception e) {
         logger.error("Group sync failed for user: {}", iamUserId, e);
         ServletResponseUtil.writeJsonError(
             response, HttpServletResponse.SC_BAD_REQUEST, "Group not found: " + e.getMessage());
+        return;
+      }
+      if (!failedGroupIds.isEmpty()) {
+        ServletResponseUtil.writeJsonError(
+            response,
+            HttpServletResponse.SC_BAD_GATEWAY,
+            "Profile updated, but group sync failed for groups: " + failedGroupIds);
         return;
       }
     }
@@ -443,58 +482,63 @@ public class UserManagementServlet extends HttpServlet {
     response.setStatus(HttpServletResponse.SC_NO_CONTENT);
   }
 
-  private void assignUserGroups(String iamUserId, List<String> groupIds) {
-    for (String groupId : groupIds) {
-      try {
-        iamProviderService.addUserToGroup(iamUserId, groupId);
-      } catch (IamProviderException e) {
-        if (e.getStatusCode() >= 400 && e.getStatusCode() < 500) throw e;
-        logger.warn("Failed to assign user {} to group {}: {}", iamUserId, groupId, e.getMessage());
-      } catch (Exception e) {
-        logger.warn("Failed to assign user {} to group {}: {}", iamUserId, groupId, e.getMessage());
-      }
-    }
+  private Set<String> getUserGroupIds(String iamUserId) {
+    return iamProviderService.getUserGroups(iamUserId).stream()
+        .map(IamGroupRepresentation::getId)
+        .collect(Collectors.toCollection(LinkedHashSet::new));
   }
 
-  private void syncUserGroups(String iamUserId, List<String> desiredGroupIds) {
-    Set<String> desired = new HashSet<>(desiredGroupIds);
-    Set<String> current;
-    try {
-      List<IamGroupRepresentation> currentGroups = iamProviderService.getUserGroups(iamUserId);
-      current =
-          currentGroups.stream().map(IamGroupRepresentation::getId).collect(Collectors.toSet());
-    } catch (Exception e) {
-      logger.warn("Failed to fetch current groups for user {}: {}", iamUserId, e.getMessage());
-      return;
-    }
+  /**
+   * Adds and removes memberships so the user ends up in exactly {@code desiredGroupIds}. Returns
+   * the ids of groups whose change failed with a 5xx or non-IAM error. A 4xx {@link
+   * IamProviderException} (for example an unknown group id) is rethrown and stops the sync.
+   */
+  private List<String> syncUserGroups(
+      String iamUserId, Set<String> currentGroupIds, List<String> desiredGroupIds) {
+    Set<String> desired = new LinkedHashSet<>(desiredGroupIds);
+    List<String> toAdd =
+        desired.stream().filter(id -> !currentGroupIds.contains(id)).collect(Collectors.toList());
+    List<String> toRemove =
+        currentGroupIds.stream().filter(id -> !desired.contains(id)).collect(Collectors.toList());
 
-    for (String groupId : desired) {
-      if (!current.contains(groupId)) {
-        try {
-          iamProviderService.addUserToGroup(iamUserId, groupId);
-        } catch (IamProviderException e) {
-          if (e.getStatusCode() >= 400 && e.getStatusCode() < 500) throw e;
-          logger.warn("Failed to add user {} to group {}: {}", iamUserId, groupId, e.getMessage());
-        } catch (Exception e) {
-          logger.warn("Failed to add user {} to group {}: {}", iamUserId, groupId, e.getMessage());
+    List<String> failed = new ArrayList<>();
+    failed.addAll(applyGroupChanges(iamUserId, toAdd, iamProviderService::addUserToGroup, "add"));
+    failed.addAll(
+        applyGroupChanges(iamUserId, toRemove, iamProviderService::removeUserFromGroup, "remove"));
+    return failed;
+  }
+
+  /**
+   * Applies {@code change} to each group and returns the ids that failed with a 5xx or non-IAM
+   * error. Tries every group before returning. Rethrows a 4xx {@link IamProviderException}.
+   */
+  private List<String> applyGroupChanges(
+      String iamUserId,
+      Collection<String> groupIds,
+      BiConsumer<String, String> change,
+      String action) {
+    List<String> failed = new ArrayList<>();
+    for (String groupId : groupIds) {
+      try {
+        change.accept(iamUserId, groupId);
+      } catch (Exception e) {
+        if (e instanceof IamProviderException) {
+          int status = ((IamProviderException) e).getStatusCode();
+          if (status >= 400 && status < 500) throw e;
         }
+        logger.error("Failed to {} user {} for group {}", action, iamUserId, groupId, e);
+        failed.add(groupId);
       }
     }
+    return failed;
+  }
 
-    for (String groupId : current) {
-      if (!desired.contains(groupId)) {
-        try {
-          iamProviderService.removeUserFromGroup(iamUserId, groupId);
-        } catch (IamProviderException e) {
-          if (e.getStatusCode() >= 400 && e.getStatusCode() < 500) throw e;
-          logger.warn(
-              "Failed to remove user {} from group {}: {}", iamUserId, groupId, e.getMessage());
-        } catch (Exception e) {
-          logger.warn(
-              "Failed to remove user {} from group {}: {}", iamUserId, groupId, e.getMessage());
-        }
-      }
-    }
+  /** "User created (Practitioner {id})", so a client can follow up with PUT after a 502. */
+  private static String createdUserLabel(Practitioner practitioner) {
+    String practitionerId = practitioner.getIdElement().getIdPart();
+    return practitionerId == null || practitionerId.isBlank()
+        ? "User created"
+        : "User created (Practitioner " + practitionerId + ")";
   }
 
   private void rollbackIamUser(String iamUserId) {

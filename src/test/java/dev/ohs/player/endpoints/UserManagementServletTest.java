@@ -609,7 +609,7 @@ class UserManagementServletTest {
   }
 
   // -------------------------------------------------------------------------
-  // assignUserGroups — exercised via doPost
+  // Group assignment — exercised via doPost
   // -------------------------------------------------------------------------
 
   @Test
@@ -668,13 +668,15 @@ class UserManagementServletTest {
   }
 
   @Test
-  void doPost_WithGroupIds_OneAddThrows_SwallowsAndContinues() throws Exception {
+  void doPost_WithGroupIds_OneAddFails_TriesAllGroups_Returns502NamingPractitionerAndFailedGroup()
+      throws Exception {
     givenRequestBody(
         "{\"username\":\"jdoe\",\"email\":\"jdoe@example.com\",\"groupIds\":[\"group-a\",\"group-b\"]}");
     when(iamProviderService.createUser(any())).thenReturn(IAM_USER_ID);
-    when(practitionerService.createPractitioner(eq(IAM_USER_ID), any()))
-        .thenReturn(new Practitioner());
-    doThrow(new RuntimeException("IAM error"))
+    Practitioner created = new Practitioner();
+    created.setId(PRACTITIONER_ID);
+    when(practitionerService.createPractitioner(eq(IAM_USER_ID), any())).thenReturn(created);
+    doThrow(new RuntimeException("connection refused"))
         .when(iamProviderService)
         .addUserToGroup(IAM_USER_ID, "group-a");
 
@@ -682,23 +684,32 @@ class UserManagementServletTest {
 
     verify(iamProviderService).addUserToGroup(IAM_USER_ID, "group-a");
     verify(iamProviderService).addUserToGroup(IAM_USER_ID, "group-b");
-    verify(response).setStatus(HttpServletResponse.SC_CREATED);
+    verify(iamProviderService, never()).deleteUser(any());
+    verify(response).setStatus(HttpServletResponse.SC_BAD_GATEWAY);
+    String body = stringWriter.toString();
+    assertTrue(body.contains("User created (Practitioner " + PRACTITIONER_ID + ")"), body);
+    assertTrue(body.contains("group-a"), body);
+    assertFalse(body.contains("group-b"), body);
   }
 
   @Test
-  void doPost_WithGroupIds_AllAddsFail_SwallowsAllExceptions() throws Exception {
+  void doPost_WithGroupIds_AddReturns4xx_StopsAndRollsBackUser_Returns400() throws Exception {
     givenRequestBody(
-        "{\"username\":\"jdoe\",\"email\":\"jdoe@example.com\",\"groupIds\":[\"group-a\",\"group-b\"]}");
+        "{\"username\":\"jdoe\",\"email\":\"jdoe@example.com\",\"groupIds\":[\"missing\",\"group-b\"]}");
     when(iamProviderService.createUser(any())).thenReturn(IAM_USER_ID);
-    when(practitionerService.createPractitioner(eq(IAM_USER_ID), any()))
-        .thenReturn(new Practitioner());
-    doThrow(new RuntimeException("IAM error"))
+    Practitioner created = new Practitioner();
+    created.setId(PRACTITIONER_ID);
+    when(practitionerService.createPractitioner(eq(IAM_USER_ID), any())).thenReturn(created);
+    doThrow(new IamProviderException(404, "Group not found"))
         .when(iamProviderService)
-        .addUserToGroup(any(), any());
+        .addUserToGroup(IAM_USER_ID, "missing");
 
     servlet.doPost(request, response);
 
-    verify(response).setStatus(HttpServletResponse.SC_CREATED);
+    verify(iamProviderService, never()).addUserToGroup(IAM_USER_ID, "group-b");
+    verify(practitionerService).deletePractitioner(PRACTITIONER_ID);
+    verify(iamProviderService).deleteUser(IAM_USER_ID);
+    verify(response).setStatus(HttpServletResponse.SC_BAD_REQUEST);
   }
 
   // -------------------------------------------------------------------------
@@ -723,17 +734,47 @@ class UserManagementServletTest {
   }
 
   @Test
-  void doPut_WithGroupIds_GetUserGroupsThrows_SkipsGroupSync() throws Exception {
-    givenPutWithGroups(
+  void doPut_WithGroupIds_GetUserGroupsFails_Returns502_ChangesNothing() throws Exception {
+    givenPutRequest(
         "{\"username\":\"jdoe\",\"email\":\"jdoe@example.com\",\"groupIds\":[\"group-a\"]}");
     when(iamProviderService.getUserGroups(IAM_USER_ID))
         .thenThrow(new RuntimeException("IAM unavailable"));
 
     servlet.doPut(request, response);
 
+    verify(iamProviderService, never()).updateUser(any(), any());
+    verify(practitionerService, never()).updatePractitioner(any(), any(), any());
     verify(iamProviderService, never()).addUserToGroup(any(), any());
     verify(iamProviderService, never()).removeUserFromGroup(any(), any());
-    verify(response).setStatus(HttpServletResponse.SC_OK);
+    verify(response).setStatus(HttpServletResponse.SC_BAD_GATEWAY);
+  }
+
+  @Test
+  void doPut_WithGroupIds_GetUserGroupsReturns404_Returns404_ChangesNothing() throws Exception {
+    givenPutRequest(
+        "{\"username\":\"jdoe\",\"email\":\"jdoe@example.com\",\"groupIds\":[\"group-a\"]}");
+    when(iamProviderService.getUserGroups(IAM_USER_ID))
+        .thenThrow(new IamProviderException(404, "User not found"));
+
+    servlet.doPut(request, response);
+
+    verify(iamProviderService, never()).updateUser(any(), any());
+    verify(practitionerService, never()).updatePractitioner(any(), any(), any());
+    verify(response).setStatus(HttpServletResponse.SC_NOT_FOUND);
+  }
+
+  @Test
+  void doPut_WithGroupIds_GetUserGroupsReturns503_Returns503_ChangesNothing() throws Exception {
+    givenPutRequest(
+        "{\"username\":\"jdoe\",\"email\":\"jdoe@example.com\",\"groupIds\":[\"group-a\"]}");
+    when(iamProviderService.getUserGroups(IAM_USER_ID))
+        .thenThrow(new IamProviderException(503, "Keycloak unavailable"));
+
+    servlet.doPut(request, response);
+
+    verify(iamProviderService, never()).updateUser(any(), any());
+    verify(practitionerService, never()).updatePractitioner(any(), any(), any());
+    verify(response).setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
   }
 
   @Test
@@ -818,36 +859,45 @@ class UserManagementServletTest {
   }
 
   @Test
-  void doPut_WithGroupIds_AddThrowsForOneGroup_SwallowsAndContinues() throws Exception {
+  void doPut_WithGroupIds_AddAndRemoveBothFail_TriesAllGroups_Returns502NamingAllFailed()
+      throws Exception {
     givenPutWithGroups(
         "{\"username\":\"jdoe\",\"email\":\"jdoe@example.com\",\"groupIds\":[\"group-a\",\"group-b\"]}");
-    when(iamProviderService.getUserGroups(IAM_USER_ID)).thenReturn(List.of());
-    doThrow(new RuntimeException("IAM error"))
+    when(iamProviderService.getUserGroups(IAM_USER_ID))
+        .thenReturn(List.of(groupRep("group-x"), groupRep("group-y")));
+    doThrow(new RuntimeException("connection refused"))
         .when(iamProviderService)
         .addUserToGroup(IAM_USER_ID, "group-a");
+    doThrow(new IamProviderException(503, "Keycloak unavailable"))
+        .when(iamProviderService)
+        .removeUserFromGroup(IAM_USER_ID, "group-x");
 
     servlet.doPut(request, response);
 
     verify(iamProviderService).addUserToGroup(IAM_USER_ID, "group-a");
     verify(iamProviderService).addUserToGroup(IAM_USER_ID, "group-b");
-    verify(response).setStatus(HttpServletResponse.SC_OK);
+    verify(iamProviderService).removeUserFromGroup(IAM_USER_ID, "group-x");
+    verify(iamProviderService).removeUserFromGroup(IAM_USER_ID, "group-y");
+    verify(response).setStatus(HttpServletResponse.SC_BAD_GATEWAY);
+    String body = stringWriter.toString();
+    assertTrue(body.contains("Profile updated"), body);
+    assertTrue(body.contains("[group-a, group-x]"), body);
   }
 
   @Test
-  void doPut_WithGroupIds_RemoveThrowsForOneGroup_SwallowsAndContinues() throws Exception {
+  void doPut_WithGroupIds_AddReturns4xx_StopsSync_Returns400() throws Exception {
     givenPutWithGroups(
-        "{\"username\":\"jdoe\",\"email\":\"jdoe@example.com\",\"groupIds\":[\"group-a\"]}");
-    when(iamProviderService.getUserGroups(IAM_USER_ID))
-        .thenReturn(List.of(groupRep("group-b"), groupRep("group-c")));
-    doThrow(new RuntimeException("IAM error"))
+        "{\"username\":\"jdoe\",\"email\":\"jdoe@example.com\",\"groupIds\":[\"missing\",\"group-b\"]}");
+    when(iamProviderService.getUserGroups(IAM_USER_ID)).thenReturn(List.of(groupRep("group-c")));
+    doThrow(new IamProviderException(404, "Group not found"))
         .when(iamProviderService)
-        .removeUserFromGroup(IAM_USER_ID, "group-b");
+        .addUserToGroup(IAM_USER_ID, "missing");
 
     servlet.doPut(request, response);
 
-    verify(iamProviderService).removeUserFromGroup(IAM_USER_ID, "group-b");
-    verify(iamProviderService).removeUserFromGroup(IAM_USER_ID, "group-c");
-    verify(response).setStatus(HttpServletResponse.SC_OK);
+    verify(iamProviderService, never()).addUserToGroup(IAM_USER_ID, "group-b");
+    verify(iamProviderService, never()).removeUserFromGroup(any(), any());
+    verify(response).setStatus(HttpServletResponse.SC_BAD_REQUEST);
   }
 
   // -------------------------------------------------------------------------
@@ -858,12 +908,17 @@ class UserManagementServletTest {
     when(request.getReader()).thenReturn(new BufferedReader(new StringReader(json)));
   }
 
-  private void givenPutWithGroups(String json) throws Exception {
+  /** PUT to the Practitioner, resolving to {@link #IAM_USER_ID}. No update stubs. */
+  private void givenPutRequest(String json) throws Exception {
     when(request.getPathInfo()).thenReturn("/" + PRACTITIONER_ID);
     givenRequestBody(json);
     Practitioner existing = new Practitioner();
     when(practitionerService.getPractitioner(PRACTITIONER_ID)).thenReturn(existing);
     when(practitionerService.extractIamUserId(existing)).thenReturn(IAM_USER_ID);
+  }
+
+  private void givenPutWithGroups(String json) throws Exception {
+    givenPutRequest(json);
     when(practitionerService.updatePractitioner(eq(PRACTITIONER_ID), eq(IAM_USER_ID), any()))
         .thenReturn(new Practitioner());
   }
